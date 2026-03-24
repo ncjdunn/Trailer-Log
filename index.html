@@ -1,196 +1,407 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Trailer Weight Logger</title>
+  <meta name="theme-color" content="#102033">
+  <meta name="description" content="Offline-ready trailer weight logger PWA for axle weights, trailer details, and shipment notes.">
+  <link rel="manifest" href="./manifest.json">
   <style>
+    :root{
+      --bg:#0b1220;
+      --panel:#121c2d;
+      --panel-2:#19263b;
+      --panel-3:#22324d;
+      --text:#edf4ff;
+      --muted:#aab9d0;
+      --line:#2b3b57;
+      --primary:#4da3ff;
+      --primary-2:#2f7ed6;
+      --danger:#e55757;
+      --success:#2ec27e;
+      --warning:#f2b84b;
+      --shadow:0 18px 45px rgba(0,0,0,0.28);
+      --radius:16px;
+    }
+
+    *{box-sizing:border-box}
+    html{color-scheme:dark}
     body{
-      font-family:system-ui,Arial,sans-serif;
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
       margin:0;
-      padding:16px;
-      background:#f7f9fc;
+      padding:20px;
+      background:
+        radial-gradient(circle at top, rgba(77,163,255,0.15), transparent 34%),
+        linear-gradient(180deg, #0a1120 0%, #0c1525 100%);
+      color:var(--text);
+      min-height:100vh;
     }
-    .container{
-      max-width:720px;
+
+    .app{
+      max-width:1100px;
       margin:0 auto;
-      background:#fff;
-      padding:16px;
-      border-radius:8px;
-      box-shadow:0 2px 8px rgba(0,0,0,0.05);
+      display:grid;
+      grid-template-columns:1.05fr 0.95fr;
+      gap:18px;
+      align-items:start;
     }
-    h2,h3{margin-top:0}
+
+    .panel{
+      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      backdrop-filter:blur(10px);
+    }
+
+    .panel-header{
+      padding:18px 20px 10px;
+      border-bottom:1px solid rgba(255,255,255,0.05);
+    }
+
+    .panel-body{padding:18px 20px 20px}
+
+    h1,h2,h3{margin:0}
+    h1{font-size:1.7rem; letter-spacing:0.2px;}
+    h2{font-size:1.05rem}
+    .subtext{color:var(--muted); margin-top:6px; line-height:1.45}
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border:1px solid rgba(77,163,255,0.35);
+      border-radius:999px;
+      color:#cfe6ff;
+      background:rgba(77,163,255,0.08);
+      font-size:.85rem;
+      margin-top:10px;
+    }
+
+    .grid-2,.grid-3{display:grid; gap:12px}
+    .grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+
     label{
       display:block;
       margin-top:12px;
       font-weight:600;
+      color:#dceaff;
     }
+
     input,select,textarea{
       width:100%;
-      padding:8px;
+      padding:12px 13px;
       margin-top:6px;
-      border:1px solid #d6dde6;
-      border-radius:6px;
-      box-sizing:border-box;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:var(--panel-2);
+      color:var(--text);
       font:inherit;
+      outline:none;
+      transition:border-color .18s ease, box-shadow .18s ease, transform .12s ease;
     }
-    button{
-      margin-top:14px;
-      padding:10px 14px;
-      background:#1e88e5;
-      color:#fff;
-      border:none;
-      border-radius:6px;
-      cursor:pointer;
-      font:inherit;
+
+    input:focus,select:focus,textarea:focus{
+      border-color:var(--primary);
+      box-shadow:0 0 0 4px rgba(77,163,255,0.14);
     }
-    button.secondary{
-      background:#6c757d;
+
+    input[readonly]{
+      background:#0f1828;
+      color:#d8ebff;
+      font-weight:700;
     }
-    button.danger{
-      background:#c62828;
-    }
-    button:active{transform:scale(0.98);}
-    .small{
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
-    }
-    .small > *{
-      flex:1 1 0;
-    }
-    ul#entries{
-      list-style:none;
-      padding-left:0;
-    }
+
+    textarea{resize:vertical; min-height:94px}
+
+    .hint{font-size:.82rem; color:var(--muted); margin-top:6px; display:block}
+    .section-title{margin:8px 0 2px; font-size:.96rem; color:#dbeaff}
+
     .axle-grid{
       display:grid;
-      grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
-      gap:8px;
-      margin-top:8px;
-    }
-    .axle-grid label{
-      margin-top:0;
-      font-weight:500;
-      font-size:0.9em;
-    }
-    .hint{
-      font-size:0.8em;
-      color:#777;
-      margin-top:2px;
-      display:block;
-    }
-    .log-actions{
+      grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+      gap:10px;
       margin-top:10px;
+    }
+
+    .toolbar, .entry-actions, .log-actions{
       display:flex;
-      gap:8px;
+      gap:10px;
       flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .toolbar{margin-bottom:14px}
+    .log-actions{margin-top:18px}
+
+    button{
+      padding:11px 14px;
+      background:linear-gradient(180deg, var(--primary), var(--primary-2));
+      color:#fff;
+      border:none;
+      border-radius:12px;
+      cursor:pointer;
+      font:inherit;
+      font-weight:700;
+      transition:transform .12s ease, filter .18s ease, opacity .18s ease;
+      box-shadow:0 10px 20px rgba(17, 94, 177, 0.22);
+    }
+
+    button:hover{filter:brightness(1.05)}
+    button:active{transform:scale(.985)}
+    button.secondary{
+      background:var(--panel-3);
+      box-shadow:none;
+      border:1px solid var(--line);
+      color:var(--text);
+    }
+    button.danger{background:linear-gradient(180deg, #f36a6a, #cc4343)}
+    button.warning{background:linear-gradient(180deg, #f7c86b, #d19b2e); color:#112}
+    button.success{background:linear-gradient(180deg, #3bd393, #1fa766)}
+    button.ghost{
+      background:transparent;
+      border:1px solid var(--line);
+      box-shadow:none;
+    }
+
+    .badge-row{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:10px;
+      margin:16px 0 6px;
+    }
+    .badge{
+      padding:12px;
+      border-radius:14px;
+      background:rgba(255,255,255,0.03);
+      border:1px solid rgba(255,255,255,0.06);
+    }
+    .badge .label{font-size:.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em}
+    .badge .value{margin-top:6px; font-size:1.1rem; font-weight:800}
+
+    .status{
+      min-height:24px;
+      margin-top:14px;
+      font-size:.93rem;
+      color:#d7e8ff;
+    }
+    .status.success{color:#6ae7a8}
+    .status.warning{color:#ffd17a}
+    .status.error{color:#ff9191}
+
+    #entries{list-style:none; padding-left:0; margin:0}
+
+    .entry{
+      margin-bottom:12px;
+      padding:14px;
+      border:1px solid rgba(255,255,255,0.08);
+      border-radius:16px;
+      background:linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02));
+    }
+    .entry-top{
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      align-items:flex-start;
+      margin-bottom:8px;
+    }
+    .entry-title{font-size:1rem; font-weight:800}
+    .entry-date{font-size:.82rem; color:var(--muted); white-space:nowrap}
+    .entry-meta,.entry-notes,.entry-weights{
+      font-size:.88rem;
+      color:#c8d7ec;
+      margin-top:6px;
+      line-height:1.45;
+    }
+    .entry-notes{
+      padding:10px 12px;
+      border-radius:12px;
+      background:rgba(255,255,255,0.03);
+      border:1px solid rgba(255,255,255,0.05);
+    }
+    .entry-actions{margin-top:12px}
+    .entry-actions button{padding:8px 11px; font-size:.9rem; border-radius:10px}
+
+    .empty-state{
+      padding:22px;
+      text-align:center;
+      color:var(--muted);
+      border:1px dashed rgba(255,255,255,0.12);
+      border-radius:16px;
+      background:rgba(255,255,255,0.02);
+    }
+
+    .search-row{display:grid; grid-template-columns:1fr 170px; gap:10px}
+    .footer-note{margin-top:14px; color:var(--muted); font-size:.82rem; line-height:1.5}
+
+    @media (max-width: 920px){
+      .app{grid-template-columns:1fr}
+    }
+    @media (max-width: 620px){
+      body{padding:12px}
+      .panel-header,.panel-body{padding-left:14px; padding-right:14px}
+      .grid-2,.grid-3,.search-row,.badge-row{grid-template-columns:1fr}
+      .entry-top{flex-direction:column}
+      button{width:100%}
+      .entry-actions button{width:auto; flex:1 1 0}
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h2>Trailer Weight Log</h2>
-    <form id="logForm">
-
-      <!-- 1: Tube number -->
-      <label>Tube Number
-        <input type="text" id="tubeNumber" required>
-      </label>
-
-      <!-- 2: Axle count -->
-      <label>Number of axles
-        <select id="axles" required>
-          <option value="">Select</option>
-          <option>1</option>
-          <option>2</option>
-          <option>3</option>
-          <option>4</option>
-          <option>5</option>
-          <option>6</option>
-          <option>7</option>
-          <option>8</option>
-          <option>9</option>
-          <option>10</option>
-          <option>11</option>
-          <option>12</option>
-        </select>
-      </label>
-
-      <!-- 3: Axle weights (injected by JS) -->
-      <div id="axleWeightsContainer"></div>
-
-      <!-- 4: Logged weights -->
-      <label>Truck weight (lbs, logged only)
-        <input type="number" step="any" id="truckWeight" required>
-      </label>
-      <label>Empty trailer weight (lbs, logged only)
-        <input type="number" step="any" id="emptyTrailerWeight" required>
-      </label>
-      <label>Truck + trailer weight (lbs, auto, sum of axle weights)
-        <input type="number" step="any" id="truckAndTrailerWeight" readonly>
-        <span class="hint">Calculated: sum of all axle weights only (lbs)</span>
-      </label>
-
-      <!-- 5: Heights -->
-      <div class="small">
-        <label>Height before vacuum (ft)
-          <input type="number" step="any" id="heightBeforeVacuum">
-        </label>
-        <label>Height after vacuum (ft)
-          <input type="number" step="any" id="heightAfterVacuum">
-        </label>
+  <main class="app">
+    <section class="panel">
+      <div class="panel-header">
+        <h1>Trailer Weight Logger</h1>
+        <p class="subtext">Log trailer loads, axle weights, trailer details, dates, and notes. Works offline and saves directly on the device.</p>
+        <div class="pill" id="installHint">Offline-ready PWA</div>
       </div>
+      <div class="panel-body">
+        <form id="logForm">
+          <input type="hidden" id="editingId">
 
-      <!-- 6: Trailer info -->
-      <div class="small">
-        <label>Trailer type
-          <input type="text" id="trailerType" required>
-        </label>
-        <label>Trailer length (ft)
-          <input type="number" step="any" id="trailerLength">
-        </label>
+          <div class="grid-2">
+            <label>Tube Number
+              <input type="text" id="tubeNumber" required autocomplete="off">
+            </label>
+            <label>Customer and Destination
+              <input type="text" id="destination" required autocomplete="off">
+            </label>
+          </div>
+
+          <div class="grid-3">
+            <label>Trailer type
+              <input type="text" id="trailerType" required autocomplete="off">
+            </label>
+            <label>Trailer length (ft)
+              <input type="number" step="any" id="trailerLength" inputmode="decimal">
+            </label>
+            <label>Trailer number
+              <input type="text" id="trailerNumber" autocomplete="off">
+            </label>
+          </div>
+
+          <div class="grid-3">
+            <label>Truck weight (lbs)
+              <input type="number" step="any" id="truckWeight" required inputmode="decimal">
+            </label>
+            <label>Empty trailer weight (lbs)
+              <input type="number" step="any" id="emptyTrailerWeight" required inputmode="decimal">
+            </label>
+            <label>Number of axles
+              <select id="axles" required>
+                <option value="">Select</option>
+                <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option>
+                <option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option>
+              </select>
+            </label>
+          </div>
+
+          <div>
+            <div class="section-title">Axle weights</div>
+            <div id="axleWeightsContainer"></div>
+          </div>
+
+          <div class="grid-3">
+            <label>Truck + trailer weight (lbs)
+              <input type="number" step="any" id="truckAndTrailerWeight" readonly>
+              <span class="hint">Calculated automatically from axle weights.</span>
+            </label>
+            <label>Net payload (lbs)
+              <input type="number" step="any" id="netPayload" readonly>
+              <span class="hint">Truck + trailer total − truck weight − empty trailer weight.</span>
+            </label>
+            <label>Vacuum height drop (ft)
+              <input type="number" step="any" id="vacuumDrop" readonly>
+              <span class="hint">Calculated from height before and after vacuum.</span>
+            </label>
+          </div>
+
+          <div class="grid-2">
+            <label>Height before vacuum (ft)
+              <input type="number" step="any" id="heightBeforeVacuum" inputmode="decimal">
+            </label>
+            <label>Height after vacuum (ft)
+              <input type="number" step="any" id="heightAfterVacuum" inputmode="decimal">
+            </label>
+          </div>
+
+          <div class="grid-2">
+            <label>Mfd date
+              <input type="date" id="mfdDate">
+            </label>
+            <label>Departure date
+              <input type="date" id="departureDate">
+            </label>
+          </div>
+
+          <label>Notes
+            <textarea id="notes" rows="4" placeholder="Add any special notes, load details, issues, or reminders..."></textarea>
+          </label>
+
+          <div class="log-actions">
+            <button type="submit" id="saveBtn">Save Log</button>
+            <button type="button" id="cancelEditBtn" class="secondary" hidden>Cancel Edit</button>
+            <button type="button" id="exportBtn" class="secondary">Export Log</button>
+            <button type="button" id="importBtn" class="secondary">Import Log</button>
+            <button type="button" id="clearBtn" class="danger">Clear All</button>
+            <input type="file" id="importFile" accept=".txt,.json" style="display:none">
+          </div>
+
+          <div id="statusMessage" class="status" aria-live="polite"></div>
+        </form>
       </div>
+    </section>
 
-      <label>Trailer number
-        <input type="text" id="trailerNumber">
-      </label>
-
-      <!-- 7: Customer / destination -->
-      <label>Customer and Destination
-        <input type="text" id="destination" required>
-      </label>
-
-      <!-- 8: Dates -->
-      <div class="small">
-        <label>Mfd date
-          <input type="date" id="mfdDate">
-        </label>
-        <label>Departure date
-          <input type="date" id="departureDate">
-        </label>
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Saved Entries</h2>
+        <p class="subtext">Search by tube number, customer, destination, trailer number, or notes.</p>
       </div>
+      <div class="panel-body">
+        <div class="toolbar">
+          <div class="search-row" style="width:100%">
+            <input type="search" id="searchInput" placeholder="Search logs...">
+            <select id="sortSelect">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="tube">Tube number</option>
+            </select>
+          </div>
+        </div>
 
-      <!-- 9: Notes -->
-      <label>Notes
-        <textarea id="notes" rows="3"></textarea>
-      </label>
+        <div class="badge-row">
+          <div class="badge">
+            <div class="label">Saved Logs</div>
+            <div class="value" id="statCount">0</div>
+          </div>
+          <div class="badge">
+            <div class="label">Shown</div>
+            <div class="value" id="statShown">0</div>
+          </div>
+          <div class="badge">
+            <div class="label">Last Saved</div>
+            <div class="value" id="statLastSaved">—</div>
+          </div>
+        </div>
 
-      <button type="submit">Save Log</button>
-    </form>
+        <ul id="entries"></ul>
+        <div class="footer-note">Tip: install this app from your browser menu to use it like a native app. It will keep working offline after the first load.</div>
+      </div>
+    </section>
+  </main>
 
-    <div class="log-actions">
-      <button type="button" id="exportBtn" class="secondary">Export log to .txt</button>
-      <button type="button" id="importBtn" class="secondary">Import .txt log</button>
-      <button type="button" id="clearBtn" class="danger">Clear log</button>
-      <!-- hidden file input for import -->
-      <input type="file" id="importFile" accept=".txt" style="display:none">
-    </div>
-
-    <h3 style="margin-top:20px">Saved Entries</h3>
-    <ul id="entries"></ul>
-  </div>
-
-  <script src="app.js"></script>
+  <script src="./app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./service-worker.js').catch(function (err) {
+          console.error('Service worker registration failed:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>
