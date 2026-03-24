@@ -1,0 +1,196 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Trailer Weight Logger</title>
+  <style>
+    body{
+      font-family:system-ui,Arial,sans-serif;
+      margin:0;
+      padding:16px;
+      background:#f7f9fc;
+    }
+    .container{
+      max-width:720px;
+      margin:0 auto;
+      background:#fff;
+      padding:16px;
+      border-radius:8px;
+      box-shadow:0 2px 8px rgba(0,0,0,0.05);
+    }
+    h2,h3{margin-top:0}
+    label{
+      display:block;
+      margin-top:12px;
+      font-weight:600;
+    }
+    input,select,textarea{
+      width:100%;
+      padding:8px;
+      margin-top:6px;
+      border:1px solid #d6dde6;
+      border-radius:6px;
+      box-sizing:border-box;
+      font:inherit;
+    }
+    button{
+      margin-top:14px;
+      padding:10px 14px;
+      background:#1e88e5;
+      color:#fff;
+      border:none;
+      border-radius:6px;
+      cursor:pointer;
+      font:inherit;
+    }
+    button.secondary{
+      background:#6c757d;
+    }
+    button.danger{
+      background:#c62828;
+    }
+    button:active{transform:scale(0.98);}
+    .small{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .small > *{
+      flex:1 1 0;
+    }
+    ul#entries{
+      list-style:none;
+      padding-left:0;
+    }
+    .axle-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+      gap:8px;
+      margin-top:8px;
+    }
+    .axle-grid label{
+      margin-top:0;
+      font-weight:500;
+      font-size:0.9em;
+    }
+    .hint{
+      font-size:0.8em;
+      color:#777;
+      margin-top:2px;
+      display:block;
+    }
+    .log-actions{
+      margin-top:10px;
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Trailer Weight Log</h2>
+    <form id="logForm">
+
+      <!-- 1: Tube number -->
+      <label>Tube Number
+        <input type="text" id="tubeNumber" required>
+      </label>
+
+      <!-- 2: Axle count -->
+      <label>Number of axles
+        <select id="axles" required>
+          <option value="">Select</option>
+          <option>1</option>
+          <option>2</option>
+          <option>3</option>
+          <option>4</option>
+          <option>5</option>
+          <option>6</option>
+          <option>7</option>
+          <option>8</option>
+          <option>9</option>
+          <option>10</option>
+          <option>11</option>
+          <option>12</option>
+        </select>
+      </label>
+
+      <!-- 3: Axle weights (injected by JS) -->
+      <div id="axleWeightsContainer"></div>
+
+      <!-- 4: Logged weights -->
+      <label>Truck weight (lbs, logged only)
+        <input type="number" step="any" id="truckWeight" required>
+      </label>
+      <label>Empty trailer weight (lbs, logged only)
+        <input type="number" step="any" id="emptyTrailerWeight" required>
+      </label>
+      <label>Truck + trailer weight (lbs, auto, sum of axle weights)
+        <input type="number" step="any" id="truckAndTrailerWeight" readonly>
+        <span class="hint">Calculated: sum of all axle weights only (lbs)</span>
+      </label>
+
+      <!-- 5: Heights -->
+      <div class="small">
+        <label>Height before vacuum (ft)
+          <input type="number" step="any" id="heightBeforeVacuum">
+        </label>
+        <label>Height after vacuum (ft)
+          <input type="number" step="any" id="heightAfterVacuum">
+        </label>
+      </div>
+
+      <!-- 6: Trailer info -->
+      <div class="small">
+        <label>Trailer type
+          <input type="text" id="trailerType" required>
+        </label>
+        <label>Trailer length (ft)
+          <input type="number" step="any" id="trailerLength">
+        </label>
+      </div>
+
+      <label>Trailer number
+        <input type="text" id="trailerNumber">
+      </label>
+
+      <!-- 7: Customer / destination -->
+      <label>Customer and Destination
+        <input type="text" id="destination" required>
+      </label>
+
+      <!-- 8: Dates -->
+      <div class="small">
+        <label>Mfd date
+          <input type="date" id="mfdDate">
+        </label>
+        <label>Departure date
+          <input type="date" id="departureDate">
+        </label>
+      </div>
+
+      <!-- 9: Notes -->
+      <label>Notes
+        <textarea id="notes" rows="3"></textarea>
+      </label>
+
+      <button type="submit">Save Log</button>
+    </form>
+
+    <div class="log-actions">
+      <button type="button" id="exportBtn" class="secondary">Export log to .txt</button>
+      <button type="button" id="importBtn" class="secondary">Import .txt log</button>
+      <button type="button" id="clearBtn" class="danger">Clear log</button>
+      <!-- hidden file input for import -->
+      <input type="file" id="importFile" accept=".txt" style="display:none">
+    </div>
+
+    <h3 style="margin-top:20px">Saved Entries</h3>
+    <ul id="entries"></ul>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
