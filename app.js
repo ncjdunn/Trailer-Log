@@ -26,7 +26,6 @@ document.addEventListener('DOMContentLoaded', function () {
   const mediaFilesInput = document.getElementById('mediaFiles');
   const photoCaptureInput = document.getElementById('photoCaptureInput');
   const videoCaptureInput = document.getElementById('videoCaptureInput');
-  const mediaDescriptionInput = document.getElementById('mediaDescription');
   const selectedMediaInfo = document.getElementById('selectedMediaInfo');
   const pendingMediaPreview = document.getElementById('pendingMediaPreview');
 
@@ -213,7 +212,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  async function saveMediaForLog(logId, items, description) {
+  async function saveMediaForLog(logId, items) {
     if (!items || !items.length) return [];
 
     const records = items.map(function (item) {
@@ -223,7 +222,7 @@ document.addEventListener('DOMContentLoaded', function () {
         name: item.file.name,
         type: item.file.type || 'application/octet-stream',
         size: item.file.size || 0,
-        description: description || '',
+        description: item.description || '',
         source: item.source || 'files',
         createdAt: new Date().toISOString(),
         blob: item.file
@@ -288,23 +287,6 @@ document.addEventListener('DOMContentLoaded', function () {
       request.onerror = function () { reject(request.error); };
     });
   }
-
-  function openSavedMediaViewer(mediaId) {
-    if (!mediaId) return;
-    window.location.href = './media-viewer.html?mediaId=' + encodeURIComponent(mediaId);
-  }
-
-  function openPendingMediaViewer(localId) {
-    const item = pendingMedia.find(function (entry) { return entry.localId === localId; });
-    if (!item || !item.file) return;
-    const objectUrl = URL.createObjectURL(item.file);
-    activeObjectUrls.push(objectUrl);
-    const viewer = window.open(objectUrl, '_blank');
-    if (!viewer) {
-      setStatus('Could not open the media preview. Allow pop-ups for this site.', 'warning');
-    }
-  }
-
 
   async function clearAllMedia() {
     const db = await openDb();
@@ -396,7 +378,8 @@ document.addEventListener('DOMContentLoaded', function () {
       pendingMedia.push({
         localId: uid(),
         file: file,
-        source: source || 'files'
+        source: source || 'files',
+        description: ''
       });
     });
 
@@ -411,25 +394,20 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
 
-    const totalBytes = pendingMedia.reduce(function (sum, item) { return sum + (item.file.size || 0); }, 0);
-    const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
-    selectedMediaInfo.textContent = pendingMedia.length + ' pending file(s) • ' + totalMb + ' MB total';
-
-    const noteText = mediaDescriptionInput.value.trim();
+    selectedMediaInfo.textContent = pendingMedia.length + (pendingMedia.length === 1 ? ' pending item selected.' : ' pending items selected.');
 
     const html = pendingMedia.map(function (item) {
       const objectUrl = URL.createObjectURL(item.file);
       activeObjectUrls.push(objectUrl);
       const preview = item.file.type.startsWith('video/')
         ? '<video preload="metadata" muted playsinline src="' + objectUrl + '"></video>'
-        : '<img src="' + objectUrl + '" alt="Pending media preview">';
+        : '<img src="' + objectUrl + '" alt="' + escapeHtml(item.file.name) + '">';
       return (
         '<div class="pending-media-card" style="margin-top:12px">' +
-          '<button type="button" class="media-thumb open-pending-media" data-id="' + escapeHtml(item.localId) + '" aria-label="Open media full screen">' +
-            preview +
-          '</button>' +
+          '<button type="button" class="media-open-btn pending-open-media" data-id="' + escapeHtml(item.localId) + '" aria-label="Open media full screen">' + preview + '</button>' +
           '<div class="pending-media-body">' +
-            (noteText ? '<div class="media-desc">' + escapeHtml(noteText) + '</div>' : '') +
+            '<label class="pending-note-input"><input type="text" class="pending-media-note" data-id="' + escapeHtml(item.localId) + '" maxlength="140" placeholder="Add media note..." value="' + escapeHtml(item.description || '') + '"></label>' +
+            ((item.description || '').trim() ? '<div class="media-desc">' + escapeHtml(item.description.trim()) + '</div>' : '') +
             '<div class="pending-media-actions">' +
               '<button type="button" class="ghost small-btn remove-pending-media" data-id="' + escapeHtml(item.localId) + '">Remove</button>' +
             '</div>' +
@@ -448,7 +426,6 @@ document.addEventListener('DOMContentLoaded', function () {
     totalWeightInput.value = '';
     netPayloadInput.value = '';
     clearPendingMedia();
-    mediaDescriptionInput.value = '';
     cancelEditBtn.hidden = true;
     saveBtn.textContent = 'Save Final Log';
     saveDraftBtn.textContent = 'Save Draft';
@@ -524,6 +501,23 @@ document.addEventListener('DOMContentLoaded', function () {
     return '';
   }
 
+  function getMostRecentEntry() {
+    const entries = getEntries().slice();
+    if (!entries.length) return null;
+    entries.sort(function (a, b) {
+      return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
+    });
+    return entries[0] || null;
+  }
+
+  function autoOpenMostRecentEntry() {
+    const latestEntry = getMostRecentEntry();
+    if (!latestEntry) return false;
+    populateFormForEdit(latestEntry);
+    setStatus('Opened most recent ' + (latestEntry.status === 'draft' ? 'draft' : 'log') + ' for editing.', 'success');
+    return true;
+  }
+
   function getFilteredAndSortedEntries() {
     const search = searchInput.value.trim().toLowerCase();
     const sort = sortSelect.value;
@@ -585,18 +579,15 @@ document.addEventListener('DOMContentLoaded', function () {
         : '-';
 
       const mediaHtml = mediaItems.length
-        ? '<div class="entry-media-meta"><strong>Media:</strong> ' + mediaItems.length + ' item(s)</div>' +
-          '<div class="media-grid">' + mediaItems.map(function (item) {
+        ? '<div class="media-grid">' + mediaItems.map(function (item) {
             const objectUrl = URL.createObjectURL(item.blob);
             activeObjectUrls.push(objectUrl);
             const mediaTag = item.type && item.type.startsWith('video/')
               ? '<video preload="metadata" muted playsinline src="' + objectUrl + '"></video>'
-              : '<img src="' + objectUrl + '" alt="Attached media preview">';
+              : '<img src="' + objectUrl + '" alt="' + escapeHtml(item.description || 'Media preview') + '">';
             return (
               '<div class="media-card">' +
-                '<button type="button" class="media-thumb open-media-viewer" data-media-id="' + escapeHtml(item.id) + '" aria-label="Open media full screen">' +
-                  mediaTag +
-                '</button>' +
+                '<button type="button" class="media-open-btn saved-open-media" data-media-id="' + escapeHtml(item.id) + '" aria-label="Open media full screen">' + mediaTag + '</button>' +
                 '<div class="media-card-body">' +
                   (item.description ? '<div class="media-desc">' + escapeHtml(item.description) + '</div>' : '') +
                   '<div class="media-card-actions">' +
@@ -659,7 +650,6 @@ document.addEventListener('DOMContentLoaded', function () {
     heightAfterInput.value = entry.heightAfterVacuum ?? '';
     departureDateInput.value = entry.departureDate || '';
     notesInput.value = entry.notes || '';
-    mediaDescriptionInput.value = '';
     clearPendingMedia();
     selectedMediaInfo.textContent = 'Existing attached media will stay unless you delete it. Any new files you add now will be attached when you save, and saved media notes can be edited below.';
     cancelEditBtn.hidden = false;
@@ -668,7 +658,7 @@ document.addEventListener('DOMContentLoaded', function () {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function saveOrUpdateEntry(entry, itemsToAttach, mediaDescription) {
+  async function saveOrUpdateEntry(entry, itemsToAttach) {
     const entries = getEntries();
     const existingIndex = entries.findIndex(function (item) { return item.id === entry.id; });
 
@@ -680,7 +670,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     if (itemsToAttach.length) {
-      await saveMediaForLog(entry.id, itemsToAttach, mediaDescription);
+      await saveMediaForLog(entry.id, itemsToAttach);
     }
 
     const mediaCount = (await getMediaForLog(entry.id)).length;
@@ -845,17 +835,18 @@ document.addEventListener('DOMContentLoaded', function () {
         return (
           '<div class="print-media-card">' +
             '<img src="' + dataUrl + '" alt="' + escapeHtml(item.name || 'Attached image') + '">' +
-            '<div class="print-media-caption">' +
+            '<div class="print-media-caption"><strong>' + escapeHtml(item.name || 'Image') + '</strong>' +
             (item.description ? '<div>' + escapeHtml(item.description) + '</div>' : '') +
-          '</div>' +
+            '<div class="muted">' + escapeHtml(item.source || 'media') + ' • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div></div>' +
           '</div>'
         );
       }
       return (
         '<div class="print-media-card print-media-file">' +
-          '<div class="print-media-caption">' +
+          '<div class="print-media-caption"><strong>' + escapeHtml(item.name || 'Video') + '</strong>' +
           (item.description ? '<div>' + escapeHtml(item.description) + '</div>' : '') +
-          '<div class="muted">Video attachment. Videos are listed in the PDF export but are not embedded in the print view.</div></div>' +
+          '<div class="muted">Video attachment • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div>' +
+          '<div class="muted">Videos are listed in the PDF export but are not embedded in the print view.</div></div>' +
         '</div>'
       );
     }));
@@ -1040,11 +1031,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     const pendingToAttach = pendingMedia.slice();
-    const mediaDescription = mediaDescriptionInput.value.trim();
     const wasEditing = Boolean(editingIdInput.value);
 
     try {
-      await saveOrUpdateEntry(entry, pendingToAttach, mediaDescription);
+      await saveOrUpdateEntry(entry, pendingToAttach);
       resetForm();
       await loadEntries();
       setStatus((mode === 'draft' ? 'Draft' : 'Log') + (wasEditing ? ' updated.' : ' saved.'), 'success');
@@ -1092,6 +1082,15 @@ document.addEventListener('DOMContentLoaded', function () {
     addPendingFiles(videoCaptureInput.files, 'camera video');
   });
 
+  pendingMediaPreview.addEventListener('input', function (event) {
+    const noteInput = event.target.closest('.pending-media-note');
+    if (!noteInput) return;
+    const targetId = noteInput.getAttribute('data-id');
+    const item = pendingMedia.find(function (media) { return media.localId === targetId; });
+    if (!item) return;
+    item.description = noteInput.value;
+  });
+
   pendingMediaPreview.addEventListener('click', function (event) {
     const removeButton = event.target.closest('.remove-pending-media');
     if (removeButton) {
@@ -1101,9 +1100,10 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
 
-    const previewButton = event.target.closest('.open-pending-media');
-    if (previewButton) {
-      openPendingMediaViewer(previewButton.getAttribute('data-id'));
+    const openButton = event.target.closest('.pending-open-media');
+    if (openButton) {
+      const targetId = openButton.getAttribute('data-id');
+      openPendingMediaViewer(targetId);
     }
   });
 
@@ -1125,9 +1125,10 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   entriesEl.addEventListener('click', async function (event) {
-    const openMediaButton = event.target.closest('.open-media-viewer');
-    if (openMediaButton) {
-      openSavedMediaViewer(openMediaButton.getAttribute('data-media-id'));
+    const mediaOpenButton = event.target.closest('.saved-open-media');
+    if (mediaOpenButton) {
+      const mediaId = mediaOpenButton.getAttribute('data-media-id');
+      if (mediaId) openSavedMediaViewer(mediaId);
       return;
     }
 
@@ -1349,5 +1350,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   updateInstallUi();
   renderPendingMediaPreview();
-  loadEntries();
+  loadEntries().then(function () {
+    autoOpenMostRecentEntry();
+  }).catch(function (err) {
+    console.error(err);
+  });
 });

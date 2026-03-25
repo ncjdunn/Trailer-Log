@@ -1,11 +1,11 @@
-const CACHE_NAME = 'trailer-log-v13';
+const CACHE_NAME = 'trailer-weight-logger-v17';
 const FILES_TO_CACHE = [
   './',
   './index.html',
   './app.js',
-  './media-viewer.html',
   './manifest.json',
   './UFflag.png',
+  './media-viewer.html',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];

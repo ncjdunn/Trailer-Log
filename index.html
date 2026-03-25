@@ -315,20 +315,13 @@
       background:#eef3fb;
     }
 
+    .media-open-btn{display:block;width:100%;padding:0;border:none;background:none;box-shadow:none;border-radius:0;cursor:pointer}
+    .media-open-btn:hover{filter:none}
+    .media-open-btn:active{transform:none}
     .media-card-body,.pending-media-body{padding:10px}
-    .media-thumb{
-      display:block;
-      width:100%;
-      padding:0;
-      border:0;
-      background:transparent;
-      cursor:pointer;
-      box-shadow:none;
-    }
-    .media-thumb img,
-    .media-thumb video{pointer-events:none}
+    .pending-note-input{margin-top:10px}
+    .pending-note-input input{margin-top:0}
     .media-desc{font-size:.8rem;color:var(--muted);line-height:1.4}
-    .media-desc:empty{display:none}
     .pending-media-actions,.media-card-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 
     .empty-state{
@@ -389,10 +382,6 @@
             <input class="hidden-file" type="file" id="mediaFiles" accept="image/*,video/*" multiple>
             <input class="hidden-file" type="file" id="photoCaptureInput" accept="image/*" capture="environment">
             <input class="hidden-file" type="file" id="videoCaptureInput" accept="video/*" capture="environment">
-
-            <label>Media description
-              <input type="text" id="mediaDescription" maxlength="140" placeholder="Example: load after vacuum, trailer condition, shipping issue...">
-            </label>
 
             <div id="selectedMediaInfo" class="hint"></div>
             <div id="pendingMediaPreview"></div>
