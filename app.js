@@ -745,7 +745,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const blob = new Blob([json], { type: 'application/json' });
 
     const shareTitle = 'Trailer log ' + (entry.tubeNumber || 'export');
-    const shareText = 'Trailer Weight Logger export for tube ' + (entry.tubeNumber || '—') + (entry.destination ? ' • ' + entry.destination : '') + '.';
+    const shareText = 'Trailer Weight Logger export for tube ' + (entry.tubeNumber || '—') + (entry.destination ? ' • ' + entry.destination : '') + '. Import the attached JSON file into the app to restore this log.';
 
     if (typeof File === 'function' && typeof navigator.share === 'function' && window.isSecureContext) {
       const file = new File([blob], filename, { type: 'application/json' });
@@ -758,7 +758,7 @@ document.addEventListener('DOMContentLoaded', function () {
       let canShareFiles = true;
       if (typeof navigator.canShare === 'function') {
         try {
-          canShareFiles = navigator.canShare(shareData);
+          canShareFiles = navigator.canShare({ files: [file] });
         } catch (err) {
           canShareFiles = false;
         }
@@ -774,13 +774,36 @@ document.addEventListener('DOMContentLoaded', function () {
             setStatus('Share canceled.', 'warning');
             return;
           }
-          console.warn('Native file share failed, falling back to download.', err);
+          console.warn('Native file share failed, trying text share fallback.', err);
+        }
+      }
+
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText
+        });
+        downloadBlob(blob, filename);
+        setStatus('Log details shared. The full JSON file was also downloaded to this device.', 'warning');
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') {
+          setStatus('Share canceled.', 'warning');
+          return;
         }
       }
     }
 
     downloadBlob(blob, filename);
-    setStatus('This browser view cannot share the backup file directly, so the log was downloaded as a JSON file you can send.', 'warning');
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(shareTitle + '\n' + shareText);
+        setStatus('This browser view could not open the native share sheet, so the log file was downloaded and a summary was copied to your clipboard.', 'warning');
+        return;
+      } catch (err) {}
+    }
+
+    setStatus('This browser view could not open the native share sheet, so the log file was downloaded instead.', 'warning');
   }
 
   function buildPrintableMediaHtml(mediaItems, printObjectUrls) {
