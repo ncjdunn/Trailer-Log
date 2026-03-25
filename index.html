@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Trailer Weight Logger</title>
   <meta name="theme-color" content="#102033">
-  <meta name="description" content="Offline-ready trailer weight logger PWA for axle weights, trailer details, and shipment notes.">
+  <meta name="description" content="Offline-ready trailer weight logger PWA for axle weights, trailer details, notes, and local media attachments.">
   <link rel="manifest" href="./manifest.json">
   <style>
     :root{
@@ -39,10 +39,10 @@
     }
 
     .app{
-      max-width:1100px;
+      max-width:1180px;
       margin:0 auto;
       display:grid;
-      grid-template-columns:1.05fr 0.95fr;
+      grid-template-columns:1.06fr 0.94fr;
       gap:18px;
       align-items:start;
     }
@@ -113,6 +113,11 @@
       background:#0f1828;
       color:#d8ebff;
       font-weight:700;
+    }
+
+    input[type="file"]{
+      padding:10px;
+      cursor:pointer;
     }
 
     textarea{resize:vertical; min-height:94px}
@@ -210,7 +215,7 @@
     }
     .entry-title{font-size:1rem; font-weight:800}
     .entry-date{font-size:.82rem; color:var(--muted); white-space:nowrap}
-    .entry-meta,.entry-notes,.entry-weights{
+    .entry-meta,.entry-notes,.entry-weights,.entry-media-meta{
       font-size:.88rem;
       color:#c8d7ec;
       margin-top:6px;
@@ -224,6 +229,34 @@
     }
     .entry-actions{margin-top:12px}
     .entry-actions button{padding:8px 11px; font-size:.9rem; border-radius:10px}
+
+    .media-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+      gap:12px;
+      margin-top:12px;
+    }
+
+    .media-card{
+      background:rgba(255,255,255,0.03);
+      border:1px solid rgba(255,255,255,0.07);
+      border-radius:14px;
+      overflow:hidden;
+    }
+
+    .media-card img,
+    .media-card video{
+      display:block;
+      width:100%;
+      aspect-ratio:16/10;
+      object-fit:cover;
+      background:#08111d;
+    }
+
+    .media-card-body{padding:10px}
+    .media-name{font-size:.84rem;font-weight:700;color:#e7f1ff;word-break:break-word}
+    .media-desc{font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.4}
+    .media-meta{font-size:.76rem;color:#92a8c8;margin-top:6px}
 
     .empty-state{
       padding:22px;
@@ -255,9 +288,10 @@
     <section class="panel">
       <div class="panel-header">
         <h1>Trailer Weight Logger</h1>
-        <p class="subtext">Log trailer loads, axle weights, trailer details, dates, and notes. Works offline and saves directly on the device.</p>
+        <p class="subtext">Log trailer loads, axle weights, trailer details, dates, notes, and local media. Everything stays on this device and browser for now.</p>
         <div class="pill" id="installHint">Offline-ready PWA</div>
       </div>
+
       <div class="panel-body">
         <form id="logForm">
           <input type="hidden" id="editingId">
@@ -341,6 +375,19 @@
             <textarea id="notes" rows="4" placeholder="Add any special notes, load details, issues, or reminders..."></textarea>
           </label>
 
+          <div class="grid-2">
+            <label>Upload photos or video
+              <input type="file" id="mediaFiles" accept="image/*,video/*" multiple>
+              <span class="hint">You can attach multiple pictures and videos to this log. Files stay local in this browser.</span>
+            </label>
+            <label>Media description
+              <textarea id="mediaDescription" rows="3" placeholder="Brief note about the selected pictures or videos..."></textarea>
+              <span class="hint">This description is stored with the attached media for this log.</span>
+            </label>
+          </div>
+
+          <div id="selectedMediaInfo" class="hint"></div>
+
           <div class="log-actions">
             <button type="submit" id="saveBtn">Save Log</button>
             <button type="button" id="cancelEditBtn" class="secondary" hidden>Cancel Edit</button>
@@ -388,7 +435,7 @@
         </div>
 
         <ul id="entries"></ul>
-        <div class="footer-note">Tip: install this app from your browser menu to use it like a native app. It will keep working offline after the first load.</div>
+        <div class="footer-note">Media is stored locally with its log on this device only. Export/import currently includes log data only and does not include the attached photos or videos.</div>
       </div>
     </section>
   </main>
