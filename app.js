@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const saveDraftBtn = document.getElementById('saveDraftBtn');
   const statusMessage = document.getElementById('statusMessage');
   const installAppBtn = document.getElementById('installAppBtn');
-  const installHint = document.getElementById('installHint');
+  const installMessage = document.getElementById('installMessage');
 
   const searchInput = document.getElementById('searchInput');
   const sortSelect = document.getElementById('sortSelect');
@@ -105,11 +105,18 @@ document.addEventListener('DOMContentLoaded', function () {
     if (isStandaloneMode()) {
       installAppBtn.textContent = 'Installed';
       installAppBtn.disabled = true;
+      if (installMessage) installMessage.textContent = 'This app is already installed on this device.';
       return;
     }
 
-    installAppBtn.disabled = false;
     installAppBtn.textContent = 'Install to Device';
+    installAppBtn.disabled = false;
+
+    if (deferredInstallPrompt) {
+      if (installMessage) installMessage.textContent = 'Ready to install on this device.';
+    } else {
+      if (installMessage) installMessage.textContent = 'Open the hosted site directly in Chrome or Edge. If this button does not prompt, use the browser menu to install.';
+    }
   }
 
   function getEntries() {
@@ -1229,7 +1236,10 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       if (!deferredInstallPrompt) {
-        setStatus('Install prompt is not available in this browser view. Open the GitHub Pages site directly in Chrome or Edge and use Install to Device from the browser menu.', 'warning');
+        const message = 'Install prompt is not available in this browser view yet. Open the hosted site directly in Chrome or Edge and use the browser install menu if needed.';
+        setStatus(message, 'warning');
+        if (installMessage) installMessage.textContent = message;
+        window.alert(message);
         return;
       }
 

@@ -1,4 +1,5 @@
 {
+  "id": "./",
   "name": "Trailer Weight Logger",
   "short_name": "TrailerLog",
   "description": "PWA for logging trailer weights, draft saves, notes, and local media with backups.",

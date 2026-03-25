@@ -1,4 +1,4 @@
-const CACHE_NAME = 'trailer-log-v7';
+const CACHE_NAME = 'trailer-log-v8';
 const FILES_TO_CACHE = [
   './',
   './index.html',
