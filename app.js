@@ -556,6 +556,7 @@ document.addEventListener('DOMContentLoaded', function () {
           mediaHtml +
           '<div class="entry-actions">' +
             '<button type="button" class="secondary edit-entry" data-id="' + escapeHtml(entry.id) + '">Edit</button>' +
+            '<button type="button" class="secondary share-entry" data-id="' + escapeHtml(entry.id) + '">Share</button>' +
             '<button type="button" class="warning duplicate-entry" data-id="' + escapeHtml(entry.id) + '">Duplicate</button>' +
             '<button type="button" class="danger delete-entry" data-id="' + escapeHtml(entry.id) + '">Delete</button>' +
           '</div>' +
@@ -635,6 +636,91 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  function sanitizeFileNamePart(value, fallback) {
+    const cleaned = String(value || '')
+      .trim()
+      .replace(/[^a-z0-9-_]+/gi, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+    return cleaned || fallback;
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function buildLogSharePayload(entry) {
+    const media = await getMediaForLog(entry.id);
+    const mediaPayload = await Promise.all(media.map(async function (item) {
+      return {
+        id: item.id,
+        logId: item.logId,
+        name: item.name,
+        type: item.type,
+        size: item.size,
+        description: item.description,
+        source: item.source || 'files',
+        createdAt: item.createdAt,
+        dataUrl: await blobToDataUrl(item.blob)
+      };
+    }));
+
+    return {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      entries: buildExportPayload([entry]),
+      media: mediaPayload
+    };
+  }
+
+  function buildLogShareFilename(entry) {
+    const tubePart = sanitizeFileNamePart(entry.tubeNumber, 'log');
+    const destinationPart = sanitizeFileNamePart(entry.destination, 'destination');
+    const date = new Date(entry.updatedAt || entry.createdAt || Date.now()).toISOString().slice(0, 10);
+    return 'trailer-log-' + tubePart + '-' + destinationPart + '-' + date + '.json';
+  }
+
+  async function shareEntry(entry) {
+    const payload = await buildLogSharePayload(entry);
+    const json = JSON.stringify(payload, null, 2);
+    const filename = buildLogShareFilename(entry);
+    const blob = new Blob([json], { type: 'application/json' });
+
+    const shareTitle = 'Trailer log ' + (entry.tubeNumber || 'export');
+    const shareText = 'Trailer Weight Logger export for tube ' + (entry.tubeNumber || '—') + (entry.destination ? ' • ' + entry.destination : '') + '.';
+
+    if (typeof File === 'function') {
+      const file = new File([blob], filename, { type: 'application/json' });
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            title: shareTitle,
+            text: shareText,
+            files: [file]
+          });
+          setStatus('Log shared.', 'success');
+          return;
+        } catch (err) {
+          if (err && err.name === 'AbortError') {
+            setStatus('Share canceled.', 'warning');
+            return;
+          }
+          console.warn('Native share failed, falling back to download.', err);
+        }
+      }
+    }
+
+    downloadBlob(blob, filename);
+    setStatus('Single log exported. Send the downloaded JSON file to someone else and they can import it.', 'success');
+  }
+
   function blobToDataUrl(blob) {
     return new Promise(function (resolve, reject) {
       const reader = new FileReader();
@@ -688,15 +774,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const json = JSON.stringify(payload, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    a.href = url;
-    a.download = 'trailer-log-backup-' + ts + '.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, 'trailer-log-backup-' + ts + '.json');
     setStatus('Backup exported with logs and attached media.', 'success');
   }
 
@@ -856,6 +935,16 @@ document.addEventListener('DOMContentLoaded', function () {
     if (button.classList.contains('edit-entry')) {
       populateFormForEdit(entry);
       setStatus('Editing ' + (entry.status === 'draft' ? 'draft' : 'log') + '.', 'warning');
+      return;
+    }
+
+    if (button.classList.contains('share-entry')) {
+      try {
+        await shareEntry(entry);
+      } catch (err) {
+        console.error(err);
+        setStatus('Could not share this log.', 'error');
+      }
       return;
     }
 
