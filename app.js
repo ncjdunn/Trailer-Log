@@ -10,14 +10,12 @@ document.addEventListener('DOMContentLoaded', function () {
   const netPayloadInput = document.getElementById('netPayload');
   const heightBeforeInput = document.getElementById('heightBeforeVacuum');
   const heightAfterInput = document.getElementById('heightAfterVacuum');
-  const vacuumDropInput = document.getElementById('vacuumDrop');
 
   const trailerTypeInput = document.getElementById('trailerType');
   const trailerLengthInput = document.getElementById('trailerLength');
   const trailerNumberInput = document.getElementById('trailerNumber');
   const tubeNumberInput = document.getElementById('tubeNumber');
   const destinationInput = document.getElementById('destination');
-  const mfdDateInput = document.getElementById('mfdDate');
   const departureDateInput = document.getElementById('departureDate');
   const notesInput = document.getElementById('notes');
 
@@ -265,6 +263,32 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  async function getMediaRecordById(mediaId) {
+    if (!mediaId) return null;
+    const db = await openDb();
+    return new Promise(function (resolve, reject) {
+      const tx = db.transaction(MEDIA_STORE, 'readonly');
+      const store = tx.objectStore(MEDIA_STORE);
+      const request = store.get(mediaId);
+      request.onsuccess = function () { resolve(request.result || null); };
+      request.onerror = function () { reject(request.error); };
+    });
+  }
+
+  async function updateMediaDescription(mediaId, description) {
+    const existing = await getMediaRecordById(mediaId);
+    if (!existing) throw new Error('Media not found.');
+    existing.description = description || '';
+    const db = await openDb();
+    return new Promise(function (resolve, reject) {
+      const tx = db.transaction(MEDIA_STORE, 'readwrite');
+      const store = tx.objectStore(MEDIA_STORE);
+      const request = store.put(existing);
+      request.onsuccess = function () { resolve(existing); };
+      request.onerror = function () { reject(request.error); };
+    });
+  }
+
   async function clearAllMedia() {
     const db = await openDb();
     return new Promise(function (resolve, reject) {
@@ -316,15 +340,6 @@ document.addEventListener('DOMContentLoaded', function () {
       netPayloadInput.value = Number.isFinite(payload) ? String(payload) : '';
     } else {
       netPayloadInput.value = '';
-    }
-
-    const before = parseFloat(heightBeforeInput.value);
-    const after = parseFloat(heightAfterInput.value);
-    if (Number.isFinite(before) && Number.isFinite(after)) {
-      const drop = before - after;
-      vacuumDropInput.value = Number.isFinite(drop) ? String(drop) : '';
-    } else {
-      vacuumDropInput.value = '';
     }
   }
 
@@ -412,7 +427,6 @@ document.addEventListener('DOMContentLoaded', function () {
     axleWeightsContainer.innerHTML = '';
     totalWeightInput.value = '';
     netPayloadInput.value = '';
-    vacuumDropInput.value = '';
     clearPendingMedia();
     mediaDescriptionInput.value = '';
     cancelEditBtn.hidden = true;
@@ -446,8 +460,6 @@ document.addEventListener('DOMContentLoaded', function () {
       netPayload: netPayloadInput.value === '' ? null : Number(netPayloadInput.value),
       heightBeforeVacuum: heightBeforeInput.value === '' ? null : Number(heightBeforeInput.value),
       heightAfterVacuum: heightAfterInput.value === '' ? null : Number(heightAfterInput.value),
-      vacuumDrop: vacuumDropInput.value === '' ? null : Number(vacuumDropInput.value),
-      mfdDate: mfdDateInput.value,
       departureDate: departureDateInput.value,
       notes: notesInput.value.trim(),
       updatedAt: nowIso,
@@ -468,7 +480,6 @@ document.addEventListener('DOMContentLoaded', function () {
       (entry.axleWeights || []).some(function (weight) { return weight != null; }) ||
       entry.heightBeforeVacuum != null ||
       entry.heightAfterVacuum != null ||
-      entry.mfdDate ||
       entry.departureDate ||
       entry.notes ||
       pendingMedia.length
@@ -569,6 +580,7 @@ document.addEventListener('DOMContentLoaded', function () {
                   (item.description ? '<div class="media-desc">' + escapeHtml(item.description) + '</div>' : '') +
                   '<div class="media-meta">' + escapeHtml(item.source || 'files') + ' • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div>' +
                   '<div class="media-card-actions">' +
+                    '<button type="button" class="secondary small-btn edit-media-note" data-log-id="' + escapeHtml(entry.id) + '" data-media-id="' + escapeHtml(item.id) + '">Edit Note</button>' +
                     '<button type="button" class="ghost small-btn delete-media-item" data-log-id="' + escapeHtml(entry.id) + '" data-media-id="' + escapeHtml(item.id) + '">Delete Media</button>' +
                   '</div>' +
                 '</div>' +
@@ -592,8 +604,8 @@ document.addEventListener('DOMContentLoaded', function () {
           '</div>' +
           '<div class="entry-weights">Truck: ' + formatNumber(entry.truckWeight) + ' lbs • Empty trailer: ' + formatNumber(entry.emptyTrailerWeight) + ' lbs • Truck + trailer: ' + formatNumber(entry.truckAndTrailerWeight) + ' lbs • Net payload: ' + formatNumber(entry.netPayload) + ' lbs</div>' +
           '<div class="entry-meta">Axles: ' + escapeHtml(entry.axles || '-') + ' • Axle weights: ' + escapeHtml(axleSummary) + '</div>' +
-          '<div class="entry-meta">Height before: ' + escapeHtml(entry.heightBeforeVacuum ?? '-') + ' ft • After: ' + escapeHtml(entry.heightAfterVacuum ?? '-') + ' ft • Drop: ' + escapeHtml(entry.vacuumDrop ?? '-') + ' ft</div>' +
-          '<div class="entry-meta">Mfd: ' + formatDateOnly(entry.mfdDate) + ' • Departure: ' + formatDateOnly(entry.departureDate) + ' • Created: ' + formatDateTime(entry.createdAt) + '</div>' +
+          '<div class="entry-meta">Height before: ' + escapeHtml(entry.heightBeforeVacuum ?? '-') + ' ft • After: ' + escapeHtml(entry.heightAfterVacuum ?? '-') + ' ft</div>' +
+          '<div class="entry-meta">Departure: ' + formatDateOnly(entry.departureDate) + ' • Created: ' + formatDateTime(entry.createdAt) + '</div>' +
           (entry.notes ? '<div class="entry-notes"><strong>Notes:</strong> ' + escapeHtml(entry.notes) + '</div>' : '') +
           mediaHtml +
           '<div class="entry-actions">' +
@@ -625,13 +637,11 @@ document.addEventListener('DOMContentLoaded', function () {
     netPayloadInput.value = entry.netPayload ?? '';
     heightBeforeInput.value = entry.heightBeforeVacuum ?? '';
     heightAfterInput.value = entry.heightAfterVacuum ?? '';
-    vacuumDropInput.value = entry.vacuumDrop ?? '';
-    mfdDateInput.value = entry.mfdDate || '';
     departureDateInput.value = entry.departureDate || '';
     notesInput.value = entry.notes || '';
     mediaDescriptionInput.value = '';
     clearPendingMedia();
-    selectedMediaInfo.textContent = 'Existing attached media will stay unless you delete the log. Any new files you add now will be attached when you save.';
+    selectedMediaInfo.textContent = 'Existing attached media will stay unless you delete it. Any new files you add now will be attached when you save, and saved media notes can be edited below.';
     cancelEditBtn.hidden = false;
     saveBtn.textContent = entry.status === 'draft' ? 'Save Final Log' : 'Update Final Log';
     saveDraftBtn.textContent = 'Update Draft';
@@ -861,12 +871,11 @@ document.addEventListener('DOMContentLoaded', function () {
       '<div><strong>Axles</strong><br>' + escapeHtml(entry.axles ?? '—') + '</div>' +
       '<div><strong>Created</strong><br>' + escapeHtml(formatDateTime(entry.createdAt)) + '</div>' +
       '<div><strong>Last Updated</strong><br>' + escapeHtml(formatDateTime(entry.updatedAt || entry.createdAt)) + '</div>' +
-      '<div><strong>Mfd Date</strong><br>' + escapeHtml(formatDateOnly(entry.mfdDate)) + '</div>' +
       '<div><strong>Departure Date</strong><br>' + escapeHtml(formatDateOnly(entry.departureDate)) + '</div>' +
       '</div></div>' +
       '<h2>Weights</h2><table class="no-break"><tr><th>Truck</th><th>Empty Trailer</th><th>Truck + Trailer</th><th>Net Payload</th></tr><tr><td>' + escapeHtml(formatNumber(entry.truckWeight)) + ' lbs</td><td>' + escapeHtml(formatNumber(entry.emptyTrailerWeight)) + ' lbs</td><td>' + escapeHtml(formatNumber(entry.truckAndTrailerWeight)) + ' lbs</td><td>' + escapeHtml(formatNumber(entry.netPayload)) + ' lbs</td></tr></table>' +
       '<div class="section no-break"><strong>Axle Weights</strong><br>' + escapeHtml(axleSummary) + '</div>' +
-      '<div class="section no-break"><strong>Vacuum Heights</strong><br>Before: ' + escapeHtml(entry.heightBeforeVacuum ?? '—') + ' ft • After: ' + escapeHtml(entry.heightAfterVacuum ?? '—') + ' ft • Drop: ' + escapeHtml(entry.vacuumDrop ?? '—') + ' ft</div>' +
+      '<div class="section no-break"><strong>Vacuum Heights</strong><br>Before: ' + escapeHtml(entry.heightBeforeVacuum ?? '—') + ' ft • After: ' + escapeHtml(entry.heightAfterVacuum ?? '—') + ' ft</div>' +
       (entry.notes ? '<div class="notes no-break"><strong>Notes</strong><br>' + escapeHtml(entry.notes).replace(/\n/g, '<br>') + '</div>' : '') +
       '<h2>Attached Media</h2>' + mediaHtml +
       '</body></html>';
@@ -1090,6 +1099,33 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   entriesEl.addEventListener('click', async function (event) {
+    const mediaEditButton = event.target.closest('.edit-media-note');
+    if (mediaEditButton) {
+      const mediaId = mediaEditButton.getAttribute('data-media-id');
+      const logId = mediaEditButton.getAttribute('data-log-id');
+      if (!mediaId || !logId) return;
+      try {
+        const mediaItem = await getMediaRecordById(mediaId);
+        if (!mediaItem) {
+          setStatus('That media item could not be found.', 'error');
+          return;
+        }
+        const updatedDescription = window.prompt('Edit media note/description:', mediaItem.description || '');
+        if (updatedDescription === null) {
+          setStatus('Media note edit canceled.', 'warning');
+          return;
+        }
+        await updateMediaDescription(mediaId, updatedDescription.trim());
+        await syncMediaCountForEntry(logId);
+        await loadEntries();
+        setStatus('Media note updated.', 'success');
+      } catch (err) {
+        console.error(err);
+        setStatus('Could not update that media note.', 'error');
+      }
+      return;
+    }
+
     const mediaDeleteButton = event.target.closest('.delete-media-item');
     if (mediaDeleteButton) {
       const mediaId = mediaDeleteButton.getAttribute('data-media-id');

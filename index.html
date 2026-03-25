@@ -430,7 +430,7 @@
             <div id="axleWeightsContainer"></div>
           </div>
 
-          <div class="grid-3">
+          <div class="grid-2">
             <label>Truck + trailer weight (lbs)
               <input type="number" step="any" id="truckAndTrailerWeight" readonly>
               <span class="hint">Calculated automatically from axle weights.</span>
@@ -438,10 +438,6 @@
             <label>Net payload (lbs)
               <input type="number" step="any" id="netPayload" readonly>
               <span class="hint">Truck + trailer total − truck weight − empty trailer weight.</span>
-            </label>
-            <label>Vacuum height drop (ft)
-              <input type="number" step="any" id="vacuumDrop" readonly>
-              <span class="hint">Calculated from height before and after vacuum.</span>
             </label>
           </div>
 
@@ -454,14 +450,9 @@
             </label>
           </div>
 
-          <div class="grid-2">
-            <label>Mfd date
-              <input type="date" id="mfdDate">
-            </label>
-            <label>Departure date
-              <input type="date" id="departureDate">
-            </label>
-          </div>
+          <label>Departure date
+            <input type="date" id="departureDate">
+          </label>
 
           <label>Notes
             <textarea id="notes" rows="4" placeholder="Add any special notes, load details, issues, or reminders..."></textarea>
