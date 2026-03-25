@@ -287,7 +287,7 @@
     .media-name{font-size:.84rem;font-weight:700;color:#e7f1ff;word-break:break-word}
     .media-desc{font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.4}
     .media-meta{font-size:.76rem;color:#92a8c8;margin-top:6px}
-    .pending-media-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+    .pending-media-actions,.media-card-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 
     .empty-state{
       padding:22px;
@@ -327,6 +327,29 @@
       <div class="panel-body">
         <form id="logForm" novalidate>
           <input type="hidden" id="editingId">
+
+          <div class="media-panel">
+            <div class="section-title">Attach media</div>
+            <span class="hint">Use browse, take a photo, or record a video first. The description below is saved with the media files you add before saving the log.</span>
+
+            <div class="media-action-row">
+              <button type="button" id="browseMediaBtn" class="secondary">Add Files</button>
+              <button type="button" id="takePhotoBtn" class="secondary">Take Photo</button>
+              <button type="button" id="recordVideoBtn" class="secondary">Record Video</button>
+              <button type="button" id="clearPendingMediaBtn" class="ghost">Clear Pending</button>
+            </div>
+
+            <input class="hidden-file" type="file" id="mediaFiles" accept="image/*,video/*" multiple>
+            <input class="hidden-file" type="file" id="photoCaptureInput" accept="image/*" capture="environment">
+            <input class="hidden-file" type="file" id="videoCaptureInput" accept="video/*" capture="environment">
+
+            <label>Media description
+              <input type="text" id="mediaDescription" maxlength="140" placeholder="Example: load after vacuum, trailer condition, shipping issue...">
+            </label>
+
+            <div id="selectedMediaInfo" class="hint"></div>
+            <div id="pendingMediaPreview"></div>
+          </div>
 
           <div class="grid-2">
             <label>Tube Number
@@ -406,29 +429,6 @@
           <label>Notes
             <textarea id="notes" rows="4" placeholder="Add any special notes, load details, issues, or reminders..."></textarea>
           </label>
-
-          <div class="media-panel">
-            <div class="section-title">Attach media</div>
-            <span class="hint">Use browse, take a photo, or record a video. The description below is saved with the media files you add before saving the log.</span>
-
-            <div class="media-action-row">
-              <button type="button" id="browseMediaBtn" class="secondary">Add Files</button>
-              <button type="button" id="takePhotoBtn" class="secondary">Take Photo</button>
-              <button type="button" id="recordVideoBtn" class="secondary">Record Video</button>
-              <button type="button" id="clearPendingMediaBtn" class="ghost">Clear Pending</button>
-            </div>
-
-            <input class="hidden-file" type="file" id="mediaFiles" accept="image/*,video/*" multiple>
-            <input class="hidden-file" type="file" id="photoCaptureInput" accept="image/*" capture="environment">
-            <input class="hidden-file" type="file" id="videoCaptureInput" accept="video/*" capture="environment">
-
-            <label>Media description
-              <input type="text" id="mediaDescription" maxlength="140" placeholder="Example: load after vacuum, trailer condition, shipping issue...">
-            </label>
-
-            <div id="selectedMediaInfo" class="hint"></div>
-            <div id="pendingMediaPreview"></div>
-          </div>
 
           <div class="log-actions">
             <button type="submit" id="saveBtn">Save Final Log</button>

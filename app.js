@@ -41,6 +41,8 @@ document.addEventListener('DOMContentLoaded', function () {
   const saveBtn = document.getElementById('saveBtn');
   const saveDraftBtn = document.getElementById('saveDraftBtn');
   const statusMessage = document.getElementById('statusMessage');
+  const installAppBtn = document.getElementById('installAppBtn');
+  const installHint = document.getElementById('installHint');
 
   const searchInput = document.getElementById('searchInput');
   const sortSelect = document.getElementById('sortSelect');
@@ -56,6 +58,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let dbPromise = null;
   let activeObjectUrls = [];
   let pendingMedia = [];
+  let deferredInstallPrompt = null;
 
   function uid() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -90,6 +93,29 @@ document.addEventListener('DOMContentLoaded', function () {
   function setStatus(message, type) {
     statusMessage.textContent = message || '';
     statusMessage.className = 'status' + (type ? ' ' + type : '');
+  }
+
+  function isStandaloneMode() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
+
+  function updateInstallUi() {
+    if (!installAppBtn || !installHint) return;
+
+    if (isStandaloneMode()) {
+      installHint.textContent = 'App installed';
+      installAppBtn.textContent = 'Installed';
+      installAppBtn.disabled = true;
+      return;
+    }
+
+    installAppBtn.disabled = false;
+    installAppBtn.textContent = 'Install App';
+    if (deferredInstallPrompt) {
+      installHint.textContent = 'Install available in this browser';
+    } else {
+      installHint.textContent = 'Offline-ready PWA';
+    }
   }
 
   function getEntries() {
@@ -223,6 +249,18 @@ document.addEventListener('DOMContentLoaded', function () {
       tx.oncomplete = function () { resolve(); };
       tx.onerror = function () { reject(tx.error); };
       tx.onabort = function () { reject(tx.error); };
+    });
+  }
+
+  async function deleteMediaRecordById(mediaId) {
+    if (!mediaId) return;
+    const db = await openDb();
+    return new Promise(function (resolve, reject) {
+      const tx = db.transaction(MEDIA_STORE, 'readwrite');
+      const store = tx.objectStore(MEDIA_STORE);
+      const request = store.delete(mediaId);
+      request.onsuccess = function () { resolve(); };
+      request.onerror = function () { reject(request.error); };
     });
   }
 
@@ -529,6 +567,9 @@ document.addEventListener('DOMContentLoaded', function () {
                   '<div class="media-name">' + escapeHtml(item.name) + '</div>' +
                   (item.description ? '<div class="media-desc">' + escapeHtml(item.description) + '</div>' : '') +
                   '<div class="media-meta">' + escapeHtml(item.source || 'files') + ' • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div>' +
+                  '<div class="media-card-actions">' +
+                    '<button type="button" class="ghost small-btn delete-media-item" data-log-id="' + escapeHtml(entry.id) + '" data-media-id="' + escapeHtml(item.id) + '">Delete Media</button>' +
+                  '</div>' +
                 '</div>' +
               '</div>'
             );
@@ -557,6 +598,7 @@ document.addEventListener('DOMContentLoaded', function () {
           '<div class="entry-actions">' +
             '<button type="button" class="secondary edit-entry" data-id="' + escapeHtml(entry.id) + '">Edit</button>' +
             '<button type="button" class="secondary share-entry" data-id="' + escapeHtml(entry.id) + '">Share</button>' +
+            '<button type="button" class="secondary print-entry" data-id="' + escapeHtml(entry.id) + '">Print / PDF</button>' +
             '<button type="button" class="warning duplicate-entry" data-id="' + escapeHtml(entry.id) + '">Duplicate</button>' +
             '<button type="button" class="danger delete-entry" data-id="' + escapeHtml(entry.id) + '">Delete</button>' +
           '</div>' +
@@ -628,6 +670,14 @@ document.addEventListener('DOMContentLoaded', function () {
     await deleteMediaForLog(entryId);
   }
 
+  async function syncMediaCountForEntry(entryId) {
+    const entries = getEntries();
+    const index = entries.findIndex(function (entry) { return entry.id === entryId; });
+    if (index < 0) return;
+    entries[index].mediaCount = (await getMediaForLog(entryId)).length;
+    setEntries(entries);
+  }
+
   function buildExportPayload(entries) {
     return entries.map(function (entry) {
       const clone = Object.assign({}, entry);
@@ -696,15 +746,26 @@ document.addEventListener('DOMContentLoaded', function () {
     const shareTitle = 'Trailer log ' + (entry.tubeNumber || 'export');
     const shareText = 'Trailer Weight Logger export for tube ' + (entry.tubeNumber || '—') + (entry.destination ? ' • ' + entry.destination : '') + '.';
 
-    if (typeof File === 'function') {
+    if (typeof File === 'function' && typeof navigator.share === 'function' && window.isSecureContext) {
       const file = new File([blob], filename, { type: 'application/json' });
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      const shareData = {
+        title: shareTitle,
+        text: shareText,
+        files: [file]
+      };
+
+      let canShareFiles = true;
+      if (typeof navigator.canShare === 'function') {
         try {
-          await navigator.share({
-            title: shareTitle,
-            text: shareText,
-            files: [file]
-          });
+          canShareFiles = navigator.canShare(shareData);
+        } catch (err) {
+          canShareFiles = false;
+        }
+      }
+
+      if (canShareFiles) {
+        try {
+          await navigator.share(shareData);
           setStatus('Log shared.', 'success');
           return;
         } catch (err) {
@@ -712,13 +773,108 @@ document.addEventListener('DOMContentLoaded', function () {
             setStatus('Share canceled.', 'warning');
             return;
           }
-          console.warn('Native share failed, falling back to download.', err);
+          console.warn('Native file share failed, falling back to download.', err);
         }
       }
     }
 
     downloadBlob(blob, filename);
-    setStatus('Single log exported. Send the downloaded JSON file to someone else and they can import it.', 'success');
+    setStatus('This browser view cannot share the backup file directly, so the log was downloaded as a JSON file you can send.', 'warning');
+  }
+
+  function buildPrintableMediaHtml(mediaItems, printObjectUrls) {
+    if (!mediaItems.length) return '<p class="muted">No attached media.</p>';
+
+    const html = mediaItems.map(function (item) {
+      if (item.type && item.type.startsWith('image/')) {
+        const objectUrl = URL.createObjectURL(item.blob);
+        printObjectUrls.push(objectUrl);
+        return (
+          '<div class="print-media-card">' +
+            '<img src="' + objectUrl + '" alt="' + escapeHtml(item.name || 'Attached image') + '">' +
+            '<div class="print-media-caption"><strong>' + escapeHtml(item.name || 'Image') + '</strong>' +
+            (item.description ? '<div>' + escapeHtml(item.description) + '</div>' : '') +
+            '<div class="muted">' + escapeHtml(item.source || 'media') + ' • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div></div>' +
+          '</div>'
+        );
+      }
+      return (
+        '<div class="print-media-card print-media-file">' +
+          '<div class="print-media-caption"><strong>' + escapeHtml(item.name || 'Video') + '</strong>' +
+          (item.description ? '<div>' + escapeHtml(item.description) + '</div>' : '') +
+          '<div class="muted">Video attachment • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div></div>' +
+        '</div>'
+      );
+    }).join('');
+
+    return '<div class="print-media-grid">' + html + '</div>';
+  }
+
+  async function printEntry(entry) {
+    const mediaItems = await getMediaForLog(entry.id);
+    const axleSummary = entry.axleWeights && entry.axleWeights.length
+      ? entry.axleWeights.map(function (weight, index) {
+          return 'Axle ' + (index + 1) + ': ' + (weight != null ? formatNumber(weight) : '-') + ' lbs';
+        }).join(' • ')
+      : '—';
+
+    const printObjectUrls = [];
+    const mediaHtml = buildPrintableMediaHtml(mediaItems, printObjectUrls);
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=980,height=900');
+    if (!printWindow) {
+      printObjectUrls.forEach(function (url) { URL.revokeObjectURL(url); });
+      setStatus('Pop-up blocked. Allow pop-ups for this site to print or save PDF.', 'error');
+      return;
+    }
+
+    const statusLabel = entry.status === 'draft' ? 'Draft' : 'Final';
+    const printableHtml = '<!doctype html><html><head><meta charset="utf-8"><title>Trailer Log ' + escapeHtml(entry.tubeNumber || '') + '</title>' +
+      '<style>' +
+      'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;line-height:1.45}h1,h2,h3{margin:0 0 10px}h1{font-size:24px}h2{font-size:16px;margin-top:20px}table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #cfd6df;padding:8px;vertical-align:top;text-align:left}.muted{color:#5d6a78}.chip{display:inline-block;background:#eef3f8;border:1px solid #d6dee8;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;margin-bottom:10px}.notes,.section{margin-top:16px;padding:12px;border:1px solid #d8dee8;border-radius:12px;background:#fafcff}.print-media-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}.print-media-card{border:1px solid #d8dee8;border-radius:12px;overflow:hidden;background:#fff}.print-media-card img{display:block;width:100%;height:auto;max-height:320px;object-fit:contain;background:#f3f6f9}.print-media-caption{padding:10px;font-size:13px}.summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}@media print{body{margin:12px}.no-break{break-inside:avoid;page-break-inside:avoid}}' +
+      '</style></head><body>' +
+      '<div class="chip">' + escapeHtml(statusLabel) + ' log</div>' +
+      '<h1>Trailer Weight Logger Report</h1>' +
+      '<div class="muted">Printed ' + escapeHtml(new Date().toLocaleString()) + '</div>' +
+      '<div class="section no-break"><div class="summary-grid">' +
+      '<div><strong>Tube Number</strong><br>' + escapeHtml(entry.tubeNumber || '—') + '</div>' +
+      '<div><strong>Customer / Destination</strong><br>' + escapeHtml(entry.destination || '—') + '</div>' +
+      '<div><strong>Trailer Type</strong><br>' + escapeHtml(entry.trailerType || '—') + '</div>' +
+      '<div><strong>Trailer Length</strong><br>' + escapeHtml(entry.trailerLength ?? '—') + ' ft</div>' +
+      '<div><strong>Trailer Number</strong><br>' + escapeHtml(entry.trailerNumber || '—') + '</div>' +
+      '<div><strong>Axles</strong><br>' + escapeHtml(entry.axles ?? '—') + '</div>' +
+      '<div><strong>Created</strong><br>' + escapeHtml(formatDateTime(entry.createdAt)) + '</div>' +
+      '<div><strong>Last Updated</strong><br>' + escapeHtml(formatDateTime(entry.updatedAt || entry.createdAt)) + '</div>' +
+      '<div><strong>Mfd Date</strong><br>' + escapeHtml(formatDateOnly(entry.mfdDate)) + '</div>' +
+      '<div><strong>Departure Date</strong><br>' + escapeHtml(formatDateOnly(entry.departureDate)) + '</div>' +
+      '</div></div>' +
+      '<h2>Weights</h2><table class="no-break"><tr><th>Truck</th><th>Empty Trailer</th><th>Truck + Trailer</th><th>Net Payload</th></tr><tr><td>' + escapeHtml(formatNumber(entry.truckWeight)) + ' lbs</td><td>' + escapeHtml(formatNumber(entry.emptyTrailerWeight)) + ' lbs</td><td>' + escapeHtml(formatNumber(entry.truckAndTrailerWeight)) + ' lbs</td><td>' + escapeHtml(formatNumber(entry.netPayload)) + ' lbs</td></tr></table>' +
+      '<div class="section no-break"><strong>Axle Weights</strong><br>' + escapeHtml(axleSummary) + '</div>' +
+      '<div class="section no-break"><strong>Vacuum Heights</strong><br>Before: ' + escapeHtml(entry.heightBeforeVacuum ?? '—') + ' ft • After: ' + escapeHtml(entry.heightAfterVacuum ?? '—') + ' ft • Drop: ' + escapeHtml(entry.vacuumDrop ?? '—') + ' ft</div>' +
+      (entry.notes ? '<div class="notes no-break"><strong>Notes</strong><br>' + escapeHtml(entry.notes).replace(/\n/g, '<br>') + '</div>' : '') +
+      '<h2>Attached Media</h2>' + mediaHtml +
+      '</body></html>';
+
+    printWindow.document.open();
+    printWindow.document.write(printableHtml);
+    printWindow.document.close();
+
+    const finalizePrint = function () {
+      setTimeout(function () {
+        try {
+          printWindow.focus();
+          printWindow.print();
+        } catch (err) {
+          console.error(err);
+        }
+        printObjectUrls.forEach(function (url) { URL.revokeObjectURL(url); });
+      }, 350);
+    };
+
+    if (printWindow.document.readyState === 'complete') {
+      finalizePrint();
+    } else {
+      printWindow.onload = finalizePrint;
+    }
   }
 
   function blobToDataUrl(blob) {
@@ -924,6 +1080,23 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   entriesEl.addEventListener('click', async function (event) {
+    const mediaDeleteButton = event.target.closest('.delete-media-item');
+    if (mediaDeleteButton) {
+      const mediaId = mediaDeleteButton.getAttribute('data-media-id');
+      const logId = mediaDeleteButton.getAttribute('data-log-id');
+      if (!mediaId || !logId) return;
+      try {
+        await deleteMediaRecordById(mediaId);
+        await syncMediaCountForEntry(logId);
+        await loadEntries();
+        setStatus('Media deleted from this log.', 'success');
+      } catch (err) {
+        console.error(err);
+        setStatus('Could not delete that media item.', 'error');
+      }
+      return;
+    }
+
     const button = event.target.closest('button[data-id]');
     if (!button) return;
 
@@ -944,6 +1117,17 @@ document.addEventListener('DOMContentLoaded', function () {
       } catch (err) {
         console.error(err);
         setStatus('Could not share this log.', 'error');
+      }
+      return;
+    }
+
+    if (button.classList.contains('print-entry')) {
+      try {
+        await printEntry(entry);
+        setStatus('Print view opened. Choose Print or Save as PDF.', 'success');
+      } catch (err) {
+        console.error(err);
+        setStatus('Could not open the print view for this log.', 'error');
       }
       return;
     }
@@ -1031,11 +1215,53 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
+  window.addEventListener('beforeinstallprompt', function (event) {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    updateInstallUi();
+  });
+
+  window.addEventListener('appinstalled', function () {
+    deferredInstallPrompt = null;
+    updateInstallUi();
+    setStatus('App installed.', 'success');
+  });
+
+  if (installAppBtn) {
+    installAppBtn.addEventListener('click', async function () {
+      if (isStandaloneMode()) {
+        setStatus('This app is already installed on this device.', 'success');
+        return;
+      }
+
+      if (!deferredInstallPrompt) {
+        setStatus('Install prompt is not available in this browser view. Open the GitHub Pages site directly in Chrome or Edge and use Install App from the browser menu.', 'warning');
+        return;
+      }
+
+      try {
+        deferredInstallPrompt.prompt();
+        const result = await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        updateInstallUi();
+        if (result && result.outcome === 'accepted') {
+          setStatus('Install accepted.', 'success');
+        } else {
+          setStatus('Install dismissed.', 'warning');
+        }
+      } catch (err) {
+        console.error(err);
+        setStatus('Could not show the install prompt in this browser view.', 'error');
+      }
+    });
+  }
+
   openDb().catch(function (err) {
     console.error(err);
     setStatus('IndexedDB could not be opened. Media uploads may not work in this browser.', 'error');
   });
 
+  updateInstallUi();
   renderPendingMediaPreview();
   loadEntries();
 });
