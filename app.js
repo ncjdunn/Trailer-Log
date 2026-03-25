@@ -806,16 +806,15 @@ document.addEventListener('DOMContentLoaded', function () {
     setStatus('This browser view could not open the native share sheet, so the log file was downloaded instead.', 'warning');
   }
 
-  function buildPrintableMediaHtml(mediaItems, printObjectUrls) {
+  async function buildPrintableMediaHtml(mediaItems) {
     if (!mediaItems.length) return '<p class="muted">No attached media.</p>';
 
-    const html = mediaItems.map(function (item) {
-      if (item.type && item.type.startsWith('image/')) {
-        const objectUrl = URL.createObjectURL(item.blob);
-        printObjectUrls.push(objectUrl);
+    const blocks = await Promise.all(mediaItems.map(async function (item) {
+      if (item.type && item.type.startsWith('image/') && item.blob) {
+        const dataUrl = await blobToDataUrl(item.blob);
         return (
           '<div class="print-media-card">' +
-            '<img src="' + objectUrl + '" alt="' + escapeHtml(item.name || 'Attached image') + '">' +
+            '<img src="' + dataUrl + '" alt="' + escapeHtml(item.name || 'Attached image') + '">' +
             '<div class="print-media-caption"><strong>' + escapeHtml(item.name || 'Image') + '</strong>' +
             (item.description ? '<div>' + escapeHtml(item.description) + '</div>' : '') +
             '<div class="muted">' + escapeHtml(item.source || 'media') + ' • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div></div>' +
@@ -826,12 +825,13 @@ document.addEventListener('DOMContentLoaded', function () {
         '<div class="print-media-card print-media-file">' +
           '<div class="print-media-caption"><strong>' + escapeHtml(item.name || 'Video') + '</strong>' +
           (item.description ? '<div>' + escapeHtml(item.description) + '</div>' : '') +
-          '<div class="muted">Video attachment • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div></div>' +
+          '<div class="muted">Video attachment • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div>' +
+          '<div class="muted">Videos are listed in the PDF export but are not embedded in the print view.</div></div>' +
         '</div>'
       );
-    }).join('');
+    }));
 
-    return '<div class="print-media-grid">' + html + '</div>';
+    return '<div class="print-media-grid">' + blocks.join('') + '</div>';
   }
 
   async function printEntry(entry) {
@@ -842,23 +842,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }).join(' • ')
       : '—';
 
-    const printObjectUrls = [];
-    const mediaHtml = buildPrintableMediaHtml(mediaItems, printObjectUrls);
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=980,height=900');
-    if (!printWindow) {
-      printObjectUrls.forEach(function (url) { URL.revokeObjectURL(url); });
-      setStatus('Pop-up blocked. Allow pop-ups for this site to print or save PDF.', 'error');
-      return;
-    }
-
+    const mediaHtml = await buildPrintableMediaHtml(mediaItems);
     const statusLabel = entry.status === 'draft' ? 'Draft' : 'Final';
-    const printableHtml = '<!doctype html><html><head><meta charset="utf-8"><title>Trailer Log ' + escapeHtml(entry.tubeNumber || '') + '</title>' +
+    const printableHtml = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trailer Log ' + escapeHtml(entry.tubeNumber || '') + '</title>' +
       '<style>' +
-      'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;line-height:1.45}h1,h2,h3{margin:0 0 10px}h1{font-size:24px}h2{font-size:16px;margin-top:20px}table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #cfd6df;padding:8px;vertical-align:top;text-align:left}.muted{color:#5d6a78}.chip{display:inline-block;background:#eef3f8;border:1px solid #d6dee8;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;margin-bottom:10px}.notes,.section{margin-top:16px;padding:12px;border:1px solid #d8dee8;border-radius:12px;background:#fafcff}.print-media-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}.print-media-card{border:1px solid #d8dee8;border-radius:12px;overflow:hidden;background:#fff}.print-media-card img{display:block;width:100%;height:auto;max-height:320px;object-fit:contain;background:#f3f6f9}.print-media-caption{padding:10px;font-size:13px}.summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}@media print{body{margin:12px}.no-break{break-inside:avoid;page-break-inside:avoid}}' +
+      'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;line-height:1.45;background:#fff}h1,h2,h3{margin:0 0 10px}h1{font-size:24px}h2{font-size:16px;margin-top:20px}table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #cfd6df;padding:8px;vertical-align:top;text-align:left}.muted{color:#5d6a78}.chip{display:inline-block;background:#eef3f8;border:1px solid #d6dee8;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;margin-bottom:10px}.notes,.section{margin-top:16px;padding:12px;border:1px solid #d8dee8;border-radius:12px;background:#fafcff}.print-media-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}.print-media-card{border:1px solid #d8dee8;border-radius:12px;overflow:hidden;background:#fff}.print-media-card img{display:block;width:100%;height:auto;max-height:320px;object-fit:contain;background:#f3f6f9}.print-media-caption{padding:10px;font-size:13px}.summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.print-actions{margin:0 0 16px}.print-actions button{padding:10px 14px;border:1px solid #ccd6e3;background:#f4f7fb;border-radius:10px;font-weight:700;cursor:pointer}@media print{body{margin:12px}.print-actions{display:none}.no-break{break-inside:avoid;page-break-inside:avoid}}' +
       '</style></head><body>' +
+      '<div class="print-actions"><button onclick="window.print()">Print / Save PDF</button></div>' +
       '<div class="chip">' + escapeHtml(statusLabel) + ' log</div>' +
       '<h1>Trailer Weight Logger Report</h1>' +
-      '<div class="muted">Printed ' + escapeHtml(new Date().toLocaleString()) + '</div>' +
+      '<div class="muted">Generated ' + escapeHtml(new Date().toLocaleString()) + '</div>' +
       '<div class="section no-break"><div class="summary-grid">' +
       '<div><strong>Tube Number</strong><br>' + escapeHtml(entry.tubeNumber || '—') + '</div>' +
       '<div><strong>Customer / Destination</strong><br>' + escapeHtml(entry.destination || '—') + '</div>' +
@@ -878,30 +871,23 @@ document.addEventListener('DOMContentLoaded', function () {
       '<h2>Attached Media</h2>' + mediaHtml +
       '</body></html>';
 
-    printWindow.document.open();
-    printWindow.document.write(printableHtml);
-    printWindow.document.close();
-
-    const finalizePrint = function () {
-      setTimeout(function () {
-        try {
-          printWindow.focus();
-          printWindow.print();
-        } catch (err) {
-          console.error(err);
-        }
-        printObjectUrls.forEach(function (url) { URL.revokeObjectURL(url); });
-      }, 350);
-    };
-
-    if (printWindow.document.readyState === 'complete') {
-      finalizePrint();
-    } else {
-      printWindow.onload = finalizePrint;
+    const htmlBlob = new Blob([printableHtml], { type: 'text/html' });
+    const htmlUrl = URL.createObjectURL(htmlBlob);
+    const printWindow = window.open(htmlUrl, '_blank');
+    if (!printWindow) {
+      URL.revokeObjectURL(htmlUrl);
+      setStatus('Pop-up blocked. Allow pop-ups for this site to print or save PDF.', 'error');
+      return;
     }
+
+    setStatus('Print view opened. Use your browser print menu to print or save as PDF.', 'success');
+    setTimeout(function () {
+      URL.revokeObjectURL(htmlUrl);
+    }, 60000);
   }
 
   function blobToDataUrl(blob) {
+
     return new Promise(function (resolve, reject) {
       const reader = new FileReader();
       reader.onload = function () { resolve(reader.result); };
@@ -1109,6 +1095,11 @@ document.addEventListener('DOMContentLoaded', function () {
       const mediaId = mediaDeleteButton.getAttribute('data-media-id');
       const logId = mediaDeleteButton.getAttribute('data-log-id');
       if (!mediaId || !logId) return;
+      const ok = confirm('Delete this attached media item from the log?');
+      if (!ok) {
+        setStatus('Media delete canceled.', 'warning');
+        return;
+      }
       try {
         await deleteMediaRecordById(mediaId);
         await syncMediaCountForEntry(logId);
