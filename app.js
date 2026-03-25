@@ -100,22 +100,16 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function updateInstallUi() {
-    if (!installAppBtn || !installHint) return;
+    if (!installAppBtn) return;
 
     if (isStandaloneMode()) {
-      installHint.textContent = 'App installed';
       installAppBtn.textContent = 'Installed';
       installAppBtn.disabled = true;
       return;
     }
 
     installAppBtn.disabled = false;
-    installAppBtn.textContent = 'Install App';
-    if (deferredInstallPrompt) {
-      installHint.textContent = 'Install available in this browser';
-    } else {
-      installHint.textContent = 'Offline-ready PWA';
-    }
+    installAppBtn.textContent = 'Install to Device';
   }
 
   function getEntries() {
@@ -1235,7 +1229,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       if (!deferredInstallPrompt) {
-        setStatus('Install prompt is not available in this browser view. Open the GitHub Pages site directly in Chrome or Edge and use Install App from the browser menu.', 'warning');
+        setStatus('Install prompt is not available in this browser view. Open the GitHub Pages site directly in Chrome or Edge and use Install to Device from the browser menu.', 'warning');
         return;
       }
 
