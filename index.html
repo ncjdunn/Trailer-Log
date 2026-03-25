@@ -4,36 +4,42 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Trailer Weight Logger</title>
-  <meta name="theme-color" content="#102033">
+  <meta name="theme-color" content="#4169E1">
   <meta name="description" content="Offline-ready trailer weight logger PWA for axle weights, trailer details, notes, draft saves, and local media attachments.">
   <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./UFflag.png" type="image/png">
   <style>
+
     :root{
-      --bg:#0b1220;
-      --panel:#121c2d;
-      --panel-2:#19263b;
-      --panel-3:#22324d;
-      --text:#edf4ff;
-      --muted:#aab9d0;
-      --line:#2b3b57;
-      --primary:#4da3ff;
-      --primary-2:#2f7ed6;
-      --danger:#e55757;
-      --success:#2ec27e;
-      --warning:#f2b84b;
-      --shadow:0 18px 45px rgba(0,0,0,0.28);
+      --bg:#eef1f5;
+      --panel:#f8fafc;
+      --panel-2:#ffffff;
+      --panel-3:#e8eef9;
+      --text:#1f2a44;
+      --muted:#5f6f8c;
+      --line:#d6ddeb;
+      --primary:#4169e1;
+      --primary-2:#2747b0;
+      --danger:#d8515c;
+      --danger-2:#b93745;
+      --success:#238a5b;
+      --success-2:#176943;
+      --warning:#e3b047;
+      --warning-2:#bf8b22;
+      --shadow:0 18px 40px rgba(39,71,176,0.12);
       --radius:16px;
+      --focus:0 0 0 4px rgba(65,105,225,0.18);
     }
 
     *{box-sizing:border-box}
-    html{color-scheme:dark}
+    html{color-scheme:light}
     body{
       font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
       margin:0;
       padding:20px;
       background:
-        radial-gradient(circle at top, rgba(77,163,255,0.15), transparent 34%),
-        linear-gradient(180deg, #0a1120 0%, #0c1525 100%);
+        radial-gradient(circle at top, rgba(65,105,225,0.18), transparent 34%),
+        linear-gradient(180deg, #f4f7fb 0%, var(--bg) 100%);
       color:var(--text);
       min-height:100vh;
     }
@@ -48,7 +54,7 @@
     }
 
     .panel{
-      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      background:linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,250,252,0.96));
       border:1px solid var(--line);
       border-radius:var(--radius);
       box-shadow:var(--shadow);
@@ -58,27 +64,50 @@
 
     .panel-header{
       padding:18px 20px 10px;
-      border-bottom:1px solid rgba(255,255,255,0.05);
+      border-bottom:1px solid rgba(39,71,176,0.10);
+      background:linear-gradient(180deg, rgba(65,105,225,0.06), rgba(255,255,255,0));
     }
 
     .panel-body{padding:18px 20px 20px}
 
     h1,h2,h3{margin:0}
-    h1{font-size:1.7rem; letter-spacing:0.2px;}
-    h2{font-size:1.05rem}
+    h1{font-size:1.7rem; letter-spacing:0.2px; color:#1b2a4a}
+    h2{font-size:1.05rem; color:#213359}
     .subtext{color:var(--muted); margin-top:6px; line-height:1.45}
     .pill{
       display:inline-flex;
       align-items:center;
       gap:8px;
       padding:6px 10px;
-      border:1px solid rgba(77,163,255,0.35);
+      border:1px solid rgba(65,105,225,0.24);
       border-radius:999px;
-      color:#cfe6ff;
-      background:rgba(77,163,255,0.08);
+      color:var(--primary-2);
+      background:rgba(65,105,225,0.08);
       font-size:.85rem;
       margin-top:10px;
     }
+
+    .brand-head{
+      display:flex;
+      align-items:center;
+      gap:14px;
+      margin-bottom:8px;
+    }
+
+    .brand-logo{
+      width:62px;
+      height:62px;
+      object-fit:contain;
+      flex:0 0 auto;
+      border-radius:14px;
+      background:#fff;
+      border:1px solid rgba(39,71,176,0.12);
+      box-shadow:0 8px 18px rgba(39,71,176,0.12);
+      padding:8px;
+    }
+
+    .brand-copy{min-width:0}
+    .brand-copy .subtext{margin-top:4px}
 
     .grid-2,.grid-3{display:grid; gap:12px}
     .grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -87,8 +116,8 @@
     label{
       display:block;
       margin-top:12px;
-      font-weight:600;
-      color:#dceaff;
+      font-weight:700;
+      color:#24365a;
     }
 
     input,select,textarea{
@@ -101,24 +130,24 @@
       color:var(--text);
       font:inherit;
       outline:none;
-      transition:border-color .18s ease, box-shadow .18s ease, transform .12s ease;
+      transition:border-color .18s ease, box-shadow .18s ease, transform .12s ease, background .18s ease;
     }
 
     input:focus,select:focus,textarea:focus{
       border-color:var(--primary);
-      box-shadow:0 0 0 4px rgba(77,163,255,0.14);
+      box-shadow:var(--focus);
     }
 
     input[readonly]{
-      background:#0f1828;
-      color:#d8ebff;
+      background:#edf3ff;
+      color:#1f3777;
       font-weight:700;
     }
 
     textarea{resize:vertical; min-height:94px}
 
     .hint{font-size:.82rem; color:var(--muted); margin-top:6px; display:block}
-    .section-title{margin:8px 0 2px; font-size:.96rem; color:#dbeaff}
+    .section-title{margin:8px 0 2px; font-size:.96rem; color:#213359; font-weight:800}
 
     .axle-grid{
       display:grid;
@@ -147,25 +176,26 @@
       cursor:pointer;
       font:inherit;
       font-weight:700;
-      transition:transform .12s ease, filter .18s ease, opacity .18s ease;
-      box-shadow:0 10px 20px rgba(17, 94, 177, 0.22);
+      transition:transform .12s ease, filter .18s ease, opacity .18s ease, box-shadow .18s ease;
+      box-shadow:0 10px 20px rgba(39,71,176,0.18);
     }
 
-    button:hover{filter:brightness(1.05)}
+    button:hover{filter:brightness(1.04)}
     button:active{transform:scale(.985)}
     button.secondary{
-      background:var(--panel-3);
+      background:linear-gradient(180deg, #f8fbff, #e9effa);
       box-shadow:none;
-      border:1px solid var(--line);
-      color:var(--text);
+      border:1px solid #cfd8ec;
+      color:var(--primary-2);
     }
-    button.danger{background:linear-gradient(180deg, #f36a6a, #cc4343)}
-    button.warning{background:linear-gradient(180deg, #f7c86b, #d19b2e); color:#112}
-    button.success{background:linear-gradient(180deg, #3bd393, #1fa766)}
+    button.danger{background:linear-gradient(180deg, var(--danger), var(--danger-2))}
+    button.warning{background:linear-gradient(180deg, var(--warning), var(--warning-2)); color:#2f250f}
+    button.success{background:linear-gradient(180deg, var(--success), var(--success-2))}
     button.ghost{
       background:transparent;
-      border:1px solid var(--line);
+      border:1px solid #cfd8ec;
       box-shadow:none;
+      color:var(--text);
     }
     button.small-btn{padding:8px 11px; font-size:.88rem; border-radius:10px}
 
@@ -178,30 +208,31 @@
     .badge{
       padding:12px;
       border-radius:14px;
-      background:rgba(255,255,255,0.03);
-      border:1px solid rgba(255,255,255,0.06);
+      background:linear-gradient(180deg, rgba(255,255,255,0.95), rgba(236,241,249,0.95));
+      border:1px solid #d7dfec;
     }
     .badge .label{font-size:.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em}
-    .badge .value{margin-top:6px; font-size:1.1rem; font-weight:800}
+    .badge .value{margin-top:6px; font-size:1.1rem; font-weight:800; color:#1b2a4a}
 
     .status{
       min-height:24px;
       margin-top:14px;
       font-size:.93rem;
-      color:#d7e8ff;
+      color:#29448b;
     }
-    .status.success{color:#6ae7a8}
-    .status.warning{color:#ffd17a}
-    .status.error{color:#ff9191}
+    .status.success{color:#177249}
+    .status.warning{color:#9b6e0f}
+    .status.error{color:#b93745}
 
     #entries{list-style:none; padding-left:0; margin:0}
 
     .entry{
       margin-bottom:12px;
       padding:14px;
-      border:1px solid rgba(255,255,255,0.08);
+      border:1px solid #d9e1ee;
       border-radius:16px;
-      background:linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02));
+      background:linear-gradient(180deg, rgba(255,255,255,0.96), rgba(240,244,250,0.92));
+      box-shadow:0 8px 22px rgba(31,42,68,0.05);
     }
     .entry-top{
       display:flex;
@@ -210,19 +241,19 @@
       align-items:flex-start;
       margin-bottom:8px;
     }
-    .entry-title{font-size:1rem; font-weight:800}
+    .entry-title{font-size:1rem; font-weight:800; color:#1b2a4a}
     .entry-date{font-size:.82rem; color:var(--muted); white-space:nowrap}
     .entry-meta,.entry-notes,.entry-weights,.entry-media-meta{
       font-size:.88rem;
-      color:#c8d7ec;
+      color:#405370;
       margin-top:6px;
       line-height:1.45;
     }
     .entry-notes{
       padding:10px 12px;
       border-radius:12px;
-      background:rgba(255,255,255,0.03);
-      border:1px solid rgba(255,255,255,0.05);
+      background:#f6f9fd;
+      border:1px solid #dbe3f0;
     }
     .entry-actions{margin-top:12px}
     .entry-actions button{padding:8px 11px; font-size:.9rem; border-radius:10px}
@@ -236,26 +267,26 @@
       font-size:.78rem;
       font-weight:800;
       letter-spacing:.03em;
-      border:1px solid rgba(255,255,255,0.08);
+      border:1px solid rgba(0,0,0,0.06);
       margin-bottom:8px;
     }
     .status-chip.final{
-      background:rgba(46,194,126,0.14);
-      color:#95f0bf;
-      border-color:rgba(46,194,126,0.28);
+      background:rgba(35,138,91,0.12);
+      color:#176943;
+      border-color:rgba(35,138,91,0.24);
     }
     .status-chip.draft{
-      background:rgba(242,184,75,0.15);
-      color:#ffd98f;
-      border-color:rgba(242,184,75,0.3);
+      background:rgba(227,176,71,0.16);
+      color:#946a14;
+      border-color:rgba(191,139,34,0.28);
     }
 
     .media-panel{
       margin-top:14px;
       padding:14px;
       border-radius:14px;
-      background:rgba(255,255,255,0.03);
-      border:1px solid rgba(255,255,255,0.08);
+      background:linear-gradient(180deg, rgba(65,105,225,0.04), rgba(255,255,255,0.85));
+      border:1px solid #d8e0ef;
     }
 
     .media-grid{
@@ -266,10 +297,11 @@
     }
 
     .media-card,.pending-media-card{
-      background:rgba(255,255,255,0.03);
-      border:1px solid rgba(255,255,255,0.07);
+      background:var(--panel-2);
+      border:1px solid #d8e0ef;
       border-radius:14px;
       overflow:hidden;
+      box-shadow:0 8px 18px rgba(39,71,176,0.08);
     }
 
     .media-card img,
@@ -280,22 +312,22 @@
       width:100%;
       aspect-ratio:16/10;
       object-fit:cover;
-      background:#08111d;
+      background:#eef3fb;
     }
 
     .media-card-body,.pending-media-body{padding:10px}
-    .media-name{font-size:.84rem;font-weight:700;color:#e7f1ff;word-break:break-word}
+    .media-name{font-size:.84rem;font-weight:700;color:#1b2a4a;word-break:break-word}
     .media-desc{font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.4}
-    .media-meta{font-size:.76rem;color:#92a8c8;margin-top:6px}
+    .media-meta{font-size:.76rem;color:#6c7f9b;margin-top:6px}
     .pending-media-actions,.media-card-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 
     .empty-state{
       padding:22px;
       text-align:center;
       color:var(--muted);
-      border:1px dashed rgba(255,255,255,0.12);
+      border:1px dashed #c9d5e8;
       border-radius:16px;
-      background:rgba(255,255,255,0.02);
+      background:#f8fbff;
     }
 
     .search-row{display:grid; grid-template-columns:1fr 170px; gap:10px}
@@ -310,17 +342,25 @@
       .panel-header,.panel-body{padding-left:14px; padding-right:14px}
       .grid-2,.grid-3,.search-row,.badge-row{grid-template-columns:1fr}
       .entry-top{flex-direction:column}
+      .brand-head{align-items:flex-start}
+      .brand-logo{width:54px;height:54px}
       button{width:100%}
       .entry-actions button,.media-action-row button,.pending-media-actions button{width:auto; flex:1 1 0}
     }
+
   </style>
 </head>
 <body>
   <main class="app">
     <section class="panel">
       <div class="panel-header">
-        <h1>Trailer Weight Logger</h1>
-        <p class="subtext">Save full logs or drafts, attach photos and videos, and keep everything local on the device for now.</p>
+        <div class="brand-head">
+          <img src="./UFflag.png" alt="Trailer Weight Logger logo" class="brand-logo">
+          <div class="brand-copy">
+            <h1>Trailer Weight Logger</h1>
+            <p class="subtext">Save full logs or drafts, attach photos and videos, and keep everything local on the device for now.</p>
+          </div>
+        </div>
         <button type="button" class="secondary" id="installAppBtn">Install to Device</button>
         <div id="installMessage" class="hint">Use Chrome or Edge directly on the hosted site. If the button does not prompt, use the browser menu to install.</div>
       </div>
