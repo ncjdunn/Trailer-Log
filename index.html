@@ -316,9 +316,19 @@
     }
 
     .media-card-body,.pending-media-body{padding:10px}
-    .media-name{font-size:.84rem;font-weight:700;color:#1b2a4a;word-break:break-word}
-    .media-desc{font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.4}
-    .media-meta{font-size:.76rem;color:#6c7f9b;margin-top:6px}
+    .media-thumb{
+      display:block;
+      width:100%;
+      padding:0;
+      border:0;
+      background:transparent;
+      cursor:pointer;
+      box-shadow:none;
+    }
+    .media-thumb img,
+    .media-thumb video{pointer-events:none}
+    .media-desc{font-size:.8rem;color:var(--muted);line-height:1.4}
+    .media-desc:empty{display:none}
     .pending-media-actions,.media-card-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 
     .empty-state{

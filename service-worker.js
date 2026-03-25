@@ -3,6 +3,7 @@ const FILES_TO_CACHE = [
   './',
   './index.html',
   './app.js',
+  './media-viewer.html',
   './manifest.json',
   './UFflag.png',
   './icons/icon-192.png',

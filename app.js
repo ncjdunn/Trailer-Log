@@ -289,6 +289,23 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  function openSavedMediaViewer(mediaId) {
+    if (!mediaId) return;
+    window.location.href = './media-viewer.html?mediaId=' + encodeURIComponent(mediaId);
+  }
+
+  function openPendingMediaViewer(localId) {
+    const item = pendingMedia.find(function (entry) { return entry.localId === localId; });
+    if (!item || !item.file) return;
+    const objectUrl = URL.createObjectURL(item.file);
+    activeObjectUrls.push(objectUrl);
+    const viewer = window.open(objectUrl, '_blank');
+    if (!viewer) {
+      setStatus('Could not open the media preview. Allow pop-ups for this site.', 'warning');
+    }
+  }
+
+
   async function clearAllMedia() {
     const db = await openDb();
     return new Promise(function (resolve, reject) {
@@ -398,18 +415,21 @@ document.addEventListener('DOMContentLoaded', function () {
     const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
     selectedMediaInfo.textContent = pendingMedia.length + ' pending file(s) • ' + totalMb + ' MB total';
 
+    const noteText = mediaDescriptionInput.value.trim();
+
     const html = pendingMedia.map(function (item) {
       const objectUrl = URL.createObjectURL(item.file);
       activeObjectUrls.push(objectUrl);
       const preview = item.file.type.startsWith('video/')
-        ? '<video controls preload="metadata" src="' + objectUrl + '"></video>'
-        : '<img src="' + objectUrl + '" alt="' + escapeHtml(item.file.name) + '">';
+        ? '<video preload="metadata" muted playsinline src="' + objectUrl + '"></video>'
+        : '<img src="' + objectUrl + '" alt="Pending media preview">';
       return (
         '<div class="pending-media-card" style="margin-top:12px">' +
-          preview +
+          '<button type="button" class="media-thumb open-pending-media" data-id="' + escapeHtml(item.localId) + '" aria-label="Open media full screen">' +
+            preview +
+          '</button>' +
           '<div class="pending-media-body">' +
-            '<div class="media-name">' + escapeHtml(item.file.name) + '</div>' +
-            '<div class="media-meta">' + escapeHtml(item.source) + ' • ' + formatNumber(Math.round((item.file.size || 0) / 1024)) + ' KB</div>' +
+            (noteText ? '<div class="media-desc">' + escapeHtml(noteText) + '</div>' : '') +
             '<div class="pending-media-actions">' +
               '<button type="button" class="ghost small-btn remove-pending-media" data-id="' + escapeHtml(item.localId) + '">Remove</button>' +
             '</div>' +
@@ -565,20 +585,20 @@ document.addEventListener('DOMContentLoaded', function () {
         : '-';
 
       const mediaHtml = mediaItems.length
-        ? '<div class="entry-media-meta"><strong>Media:</strong> ' + mediaItems.length + ' file(s)</div>' +
+        ? '<div class="entry-media-meta"><strong>Media:</strong> ' + mediaItems.length + ' item(s)</div>' +
           '<div class="media-grid">' + mediaItems.map(function (item) {
             const objectUrl = URL.createObjectURL(item.blob);
             activeObjectUrls.push(objectUrl);
             const mediaTag = item.type && item.type.startsWith('video/')
-              ? '<video controls preload="metadata" src="' + objectUrl + '"></video>'
-              : '<img src="' + objectUrl + '" alt="' + escapeHtml(item.name) + '">';
+              ? '<video preload="metadata" muted playsinline src="' + objectUrl + '"></video>'
+              : '<img src="' + objectUrl + '" alt="Attached media preview">';
             return (
               '<div class="media-card">' +
-                mediaTag +
+                '<button type="button" class="media-thumb open-media-viewer" data-media-id="' + escapeHtml(item.id) + '" aria-label="Open media full screen">' +
+                  mediaTag +
+                '</button>' +
                 '<div class="media-card-body">' +
-                  '<div class="media-name">' + escapeHtml(item.name) + '</div>' +
                   (item.description ? '<div class="media-desc">' + escapeHtml(item.description) + '</div>' : '') +
-                  '<div class="media-meta">' + escapeHtml(item.source || 'files') + ' • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div>' +
                   '<div class="media-card-actions">' +
                     '<button type="button" class="secondary small-btn edit-media-note" data-log-id="' + escapeHtml(entry.id) + '" data-media-id="' + escapeHtml(item.id) + '">Edit Note</button>' +
                     '<button type="button" class="ghost small-btn delete-media-item" data-log-id="' + escapeHtml(entry.id) + '" data-media-id="' + escapeHtml(item.id) + '">Delete Media</button>' +
@@ -825,18 +845,17 @@ document.addEventListener('DOMContentLoaded', function () {
         return (
           '<div class="print-media-card">' +
             '<img src="' + dataUrl + '" alt="' + escapeHtml(item.name || 'Attached image') + '">' +
-            '<div class="print-media-caption"><strong>' + escapeHtml(item.name || 'Image') + '</strong>' +
+            '<div class="print-media-caption">' +
             (item.description ? '<div>' + escapeHtml(item.description) + '</div>' : '') +
-            '<div class="muted">' + escapeHtml(item.source || 'media') + ' • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div></div>' +
+          '</div>' +
           '</div>'
         );
       }
       return (
         '<div class="print-media-card print-media-file">' +
-          '<div class="print-media-caption"><strong>' + escapeHtml(item.name || 'Video') + '</strong>' +
+          '<div class="print-media-caption">' +
           (item.description ? '<div>' + escapeHtml(item.description) + '</div>' : '') +
-          '<div class="muted">Video attachment • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div>' +
-          '<div class="muted">Videos are listed in the PDF export but are not embedded in the print view.</div></div>' +
+          '<div class="muted">Video attachment. Videos are listed in the PDF export but are not embedded in the print view.</div></div>' +
         '</div>'
       );
     }));
@@ -1074,11 +1093,18 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   pendingMediaPreview.addEventListener('click', function (event) {
-    const button = event.target.closest('.remove-pending-media');
-    if (!button) return;
-    const targetId = button.getAttribute('data-id');
-    pendingMedia = pendingMedia.filter(function (item) { return item.localId !== targetId; });
-    renderPendingMediaPreview();
+    const removeButton = event.target.closest('.remove-pending-media');
+    if (removeButton) {
+      const targetId = removeButton.getAttribute('data-id');
+      pendingMedia = pendingMedia.filter(function (item) { return item.localId !== targetId; });
+      renderPendingMediaPreview();
+      return;
+    }
+
+    const previewButton = event.target.closest('.open-pending-media');
+    if (previewButton) {
+      openPendingMediaViewer(previewButton.getAttribute('data-id'));
+    }
   });
 
   searchInput.addEventListener('input', function () { loadEntries(); });
@@ -1099,6 +1125,12 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   entriesEl.addEventListener('click', async function (event) {
+    const openMediaButton = event.target.closest('.open-media-viewer');
+    if (openMediaButton) {
+      openSavedMediaViewer(openMediaButton.getAttribute('data-media-id'));
+      return;
+    }
+
     const mediaEditButton = event.target.closest('.edit-media-note');
     if (mediaEditButton) {
       const mediaId = mediaEditButton.getAttribute('data-media-id');

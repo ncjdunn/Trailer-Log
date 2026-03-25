@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Media Viewer</title>
+  <meta name="theme-color" content="#4169E1">
+  <style>
+    :root{
+      --bg:#0f172a;
+      --text:#f8fafc;
+      --muted:#cbd5e1;
+      --line:rgba(255,255,255,0.12);
+      --primary:#4169E1;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+    body{display:flex;flex-direction:column}
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;
+      position:sticky;top:0;z-index:10;border-bottom:1px solid var(--line);background:rgba(15,23,42,0.92);backdrop-filter:blur(8px)
+    }
+    .title{font-size:1rem;font-weight:700}
+    .note{padding:12px 14px;color:var(--muted);line-height:1.45}
+    .viewer{flex:1;display:flex;align-items:center;justify-content:center;padding:12px}
+    .viewer img,.viewer video{
+      max-width:100%;max-height:calc(100vh - 120px);width:auto;height:auto;border-radius:14px;background:#000;
+      box-shadow:0 20px 50px rgba(0,0,0,0.45)
+    }
+    .empty{padding:24px;text-align:center;color:var(--muted)}
+    button{
+      padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:linear-gradient(180deg,#4169E1,#2747B0);
+      color:#fff;font:inherit;font-weight:700;cursor:pointer
+    }
+    .secondary{background:transparent}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="title">Media Viewer</div>
+    <button type="button" class="secondary" onclick="history.back()">Back</button>
+  </div>
+  <div id="note" class="note" hidden></div>
+  <main class="viewer" id="viewer">
+    <div class="empty">Loading media…</div>
+  </main>
+
+  <script>
+    (function () {
+      const DB_NAME = 'TrailerWeightLoggerDB';
+      const DB_VERSION = 2;
+      const MEDIA_STORE = 'media';
+      const viewer = document.getElementById('viewer');
+      const noteEl = document.getElementById('note');
+
+      function getMediaId() {
+        return new URLSearchParams(window.location.search).get('mediaId');
+      }
+
+      function openDb() {
+        return new Promise(function (resolve, reject) {
+          const request = indexedDB.open(DB_NAME, DB_VERSION);
+          request.onsuccess = function () { resolve(request.result); };
+          request.onerror = function () { reject(request.error); };
+        });
+      }
+
+      async function getMediaRecordById(mediaId) {
+        const db = await openDb();
+        return new Promise(function (resolve, reject) {
+          const tx = db.transaction(MEDIA_STORE, 'readonly');
+          const store = tx.objectStore(MEDIA_STORE);
+          const request = store.get(mediaId);
+          request.onsuccess = function () { resolve(request.result || null); };
+          request.onerror = function () { reject(request.error); };
+        });
+      }
+
+      async function load() {
+        const mediaId = getMediaId();
+        if (!mediaId) {
+          viewer.innerHTML = '<div class="empty">No media selected.</div>';
+          return;
+        }
+
+        try {
+          const item = await getMediaRecordById(mediaId);
+          if (!item || !item.blob) {
+            viewer.innerHTML = '<div class="empty">This media item could not be found on this device.</div>';
+            return;
+          }
+
+          const objectUrl = URL.createObjectURL(item.blob);
+          let mediaNode;
+          if ((item.type || '').startsWith('video/')) {
+            mediaNode = document.createElement('video');
+            mediaNode.src = objectUrl;
+            mediaNode.controls = true;
+            mediaNode.autoplay = true;
+            mediaNode.playsInline = true;
+          } else {
+            mediaNode = document.createElement('img');
+            mediaNode.src = objectUrl;
+            mediaNode.alt = item.description || 'Media preview';
+          }
+
+          viewer.innerHTML = '';
+          viewer.appendChild(mediaNode);
+
+          if (item.description) {
+            noteEl.textContent = item.description;
+            noteEl.hidden = false;
+          }
+        } catch (err) {
+          console.error(err);
+          viewer.innerHTML = '<div class="empty">Could not load this media item.</div>';
+        }
+      }
+
+      load();
+    }());
+  </script>
+</body>
+</html>
