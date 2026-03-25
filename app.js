@@ -21,9 +21,16 @@ document.addEventListener('DOMContentLoaded', function () {
   const departureDateInput = document.getElementById('departureDate');
   const notesInput = document.getElementById('notes');
 
+  const browseMediaBtn = document.getElementById('browseMediaBtn');
+  const takePhotoBtn = document.getElementById('takePhotoBtn');
+  const recordVideoBtn = document.getElementById('recordVideoBtn');
+  const clearPendingMediaBtn = document.getElementById('clearPendingMediaBtn');
   const mediaFilesInput = document.getElementById('mediaFiles');
+  const photoCaptureInput = document.getElementById('photoCaptureInput');
+  const videoCaptureInput = document.getElementById('videoCaptureInput');
   const mediaDescriptionInput = document.getElementById('mediaDescription');
   const selectedMediaInfo = document.getElementById('selectedMediaInfo');
+  const pendingMediaPreview = document.getElementById('pendingMediaPreview');
 
   const exportBtn = document.getElementById('exportBtn');
   const importBtn = document.getElementById('importBtn');
@@ -32,6 +39,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const cancelEditBtn = document.getElementById('cancelEditBtn');
   const editingIdInput = document.getElementById('editingId');
   const saveBtn = document.getElementById('saveBtn');
+  const saveDraftBtn = document.getElementById('saveDraftBtn');
   const statusMessage = document.getElementById('statusMessage');
 
   const searchInput = document.getElementById('searchInput');
@@ -42,10 +50,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const STORAGE_KEY = 'trailerLogs';
   const DB_NAME = 'TrailerWeightLoggerDB';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const MEDIA_STORE = 'media';
+
   let dbPromise = null;
   let activeObjectUrls = [];
+  let pendingMedia = [];
 
   function uid() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -148,34 +158,55 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  async function saveMediaForLog(logId, files, description) {
-    if (!files || !files.length) return [];
+  async function getAllMedia() {
+    const db = await openDb();
+    return new Promise(function (resolve, reject) {
+      const tx = db.transaction(MEDIA_STORE, 'readonly');
+      const store = tx.objectStore(MEDIA_STORE);
+      const request = store.getAll();
+      request.onsuccess = function () {
+        resolve(request.result || []);
+      };
+      request.onerror = function () {
+        reject(request.error);
+      };
+    });
+  }
 
+  async function saveMediaRecords(records) {
+    if (!records || !records.length) return;
     const db = await openDb();
     return new Promise(function (resolve, reject) {
       const tx = db.transaction(MEDIA_STORE, 'readwrite');
       const store = tx.objectStore(MEDIA_STORE);
-      const saved = [];
-
-      tx.oncomplete = function () { resolve(saved); };
-      tx.onerror = function () { reject(tx.error); };
-      tx.onabort = function () { reject(tx.error); };
-
-      files.forEach(function (file) {
-        const record = {
-          id: uid(),
-          logId: logId,
-          name: file.name,
-          type: file.type || 'application/octet-stream',
-          size: file.size || 0,
-          description: description || '',
-          createdAt: new Date().toISOString(),
-          blob: file
-        };
-        saved.push(record);
+      records.forEach(function (record) {
         store.put(record);
       });
+      tx.oncomplete = function () { resolve(); };
+      tx.onerror = function () { reject(tx.error); };
+      tx.onabort = function () { reject(tx.error); };
     });
+  }
+
+  async function saveMediaForLog(logId, items, description) {
+    if (!items || !items.length) return [];
+
+    const records = items.map(function (item) {
+      return {
+        id: uid(),
+        logId: logId,
+        name: item.file.name,
+        type: item.file.type || 'application/octet-stream',
+        size: item.file.size || 0,
+        description: description || '',
+        source: item.source || 'files',
+        createdAt: new Date().toISOString(),
+        blob: item.file
+      };
+    });
+
+    await saveMediaRecords(records);
+    return records;
   }
 
   async function deleteMediaForLog(logId) {
@@ -206,118 +237,23 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  async function getAllMediaRecords() {
-    const db = await openDb();
-    return new Promise(function (resolve, reject) {
-      const tx = db.transaction(MEDIA_STORE, 'readonly');
-      const store = tx.objectStore(MEDIA_STORE);
-      const request = store.getAll();
-
-      request.onsuccess = function () {
-        const results = request.result || [];
-        results.sort(function (a, b) {
-          return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
-        });
-        resolve(results);
-      };
-      request.onerror = function () {
-        reject(request.error);
-      };
-    });
-  }
-
-  function blobToDataUrl(blob) {
-    return new Promise(function (resolve, reject) {
-      const reader = new FileReader();
-      reader.onload = function () { resolve(reader.result); };
-      reader.onerror = function () { reject(reader.error); };
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  function dataUrlToBlob(dataUrl, fallbackType) {
-    const parts = String(dataUrl || '').split(',');
-    if (parts.length < 2) {
-      throw new Error('Invalid media backup format.');
-    }
-
-    const header = parts[0];
-    const mimeMatch = header.match(/data:(.*?);base64/);
-    const mimeType = (mimeMatch && mimeMatch[1]) || fallbackType || 'application/octet-stream';
-    const binary = atob(parts[1]);
-    const bytes = new Uint8Array(binary.length);
-
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-
-    return new Blob([bytes], { type: mimeType });
-  }
-
-  async function buildExportPackage(entries) {
-    const mediaRecords = await getAllMediaRecords();
-    const serializedMedia = await Promise.all(mediaRecords.map(async function (item) {
-      return {
-        id: item.id,
-        logId: item.logId,
-        name: item.name,
-        type: item.type,
-        size: item.size,
-        description: item.description || '',
-        createdAt: item.createdAt,
-        dataUrl: await blobToDataUrl(item.blob)
-      };
-    }));
-
-    return {
-      version: 2,
-      exportedAt: new Date().toISOString(),
-      entries: buildExportPayload(entries),
-      media: serializedMedia
-    };
-  }
-
-  async function importMediaRecords(mediaRecords, idMap) {
-    if (!Array.isArray(mediaRecords) || !mediaRecords.length) return 0;
-
-    const db = await openDb();
-    return new Promise(function (resolve, reject) {
-      const tx = db.transaction(MEDIA_STORE, 'readwrite');
-      const store = tx.objectStore(MEDIA_STORE);
-      let importedCount = 0;
-
-      tx.oncomplete = function () { resolve(importedCount); };
-      tx.onerror = function () { reject(tx.error); };
-      tx.onabort = function () { reject(tx.error); };
-
-      mediaRecords.forEach(function (item) {
-        if (!item || !item.logId || !item.dataUrl) return;
-
-        const mappedLogId = idMap[item.logId];
-        if (!mappedLogId) return;
-
-        const record = {
-          id: uid(),
-          logId: mappedLogId,
-          name: item.name || 'media',
-          type: item.type || 'application/octet-stream',
-          size: Number(item.size) || 0,
-          description: item.description || '',
-          createdAt: item.createdAt || new Date().toISOString(),
-          blob: dataUrlToBlob(item.dataUrl, item.type)
-        };
-
-        importedCount += 1;
-        store.put(record);
-      });
-    });
-  }
-
   function revokeObjectUrls() {
     activeObjectUrls.forEach(function (url) {
       URL.revokeObjectURL(url);
     });
     activeObjectUrls = [];
+  }
+
+  function clearPendingMediaInputs() {
+    mediaFilesInput.value = '';
+    photoCaptureInput.value = '';
+    videoCaptureInput.value = '';
+  }
+
+  function clearPendingMedia() {
+    pendingMedia = [];
+    clearPendingMediaInputs();
+    renderPendingMediaPreview();
   }
 
   function recalcComputedFields() {
@@ -336,7 +272,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const truckWeight = parseFloat(truckWeightInput.value);
     const emptyTrailerWeight = parseFloat(emptyTrailerWeightInput.value);
-    if (!Number.isNaN(total) && !Number.isNaN(truckWeight) && !Number.isNaN(emptyTrailerWeight) && total > 0) {
+    if (total > 0 && Number.isFinite(truckWeight) && Number.isFinite(emptyTrailerWeight)) {
       const payload = total - truckWeight - emptyTrailerWeight;
       netPayloadInput.value = Number.isFinite(payload) ? String(payload) : '';
     } else {
@@ -345,7 +281,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const before = parseFloat(heightBeforeInput.value);
     const after = parseFloat(heightAfterInput.value);
-    if (!Number.isNaN(before) && !Number.isNaN(after)) {
+    if (Number.isFinite(before) && Number.isFinite(after)) {
       const drop = before - after;
       vacuumDropInput.value = Number.isFinite(drop) ? String(drop) : '';
     } else {
@@ -368,7 +304,7 @@ document.addEventListener('DOMContentLoaded', function () {
       input.type = 'number';
       input.step = 'any';
       input.id = 'axleWeight_' + i;
-      input.required = true;
+      input.inputMode = 'decimal';
       if (existingWeights && existingWeights[i - 1] != null) {
         input.value = existingWeights[i - 1];
       }
@@ -381,16 +317,54 @@ document.addEventListener('DOMContentLoaded', function () {
     axleWeightsContainer.appendChild(wrapper);
   }
 
-  function updateSelectedMediaInfo() {
-    const files = Array.from(mediaFilesInput.files || []);
-    if (!files.length) {
-      selectedMediaInfo.textContent = '';
+  function addPendingFiles(fileList, source) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+
+    files.forEach(function (file) {
+      pendingMedia.push({
+        localId: uid(),
+        file: file,
+        source: source || 'files'
+      });
+    });
+
+    clearPendingMediaInputs();
+    renderPendingMediaPreview();
+  }
+
+  function renderPendingMediaPreview() {
+    if (!pendingMedia.length) {
+      selectedMediaInfo.textContent = 'No new media selected yet.';
+      pendingMediaPreview.innerHTML = '';
       return;
     }
 
-    const totalBytes = files.reduce(function (sum, file) { return sum + (file.size || 0); }, 0);
+    const totalBytes = pendingMedia.reduce(function (sum, item) { return sum + (item.file.size || 0); }, 0);
     const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
-    selectedMediaInfo.textContent = files.length + ' file(s) selected • ' + totalMb + ' MB total';
+    selectedMediaInfo.textContent = pendingMedia.length + ' pending file(s) • ' + totalMb + ' MB total';
+
+    const html = pendingMedia.map(function (item) {
+      const objectUrl = URL.createObjectURL(item.file);
+      activeObjectUrls.push(objectUrl);
+      const preview = item.file.type.startsWith('video/')
+        ? '<video controls preload="metadata" src="' + objectUrl + '"></video>'
+        : '<img src="' + objectUrl + '" alt="' + escapeHtml(item.file.name) + '">';
+      return (
+        '<div class="pending-media-card" style="margin-top:12px">' +
+          preview +
+          '<div class="pending-media-body">' +
+            '<div class="media-name">' + escapeHtml(item.file.name) + '</div>' +
+            '<div class="media-meta">' + escapeHtml(item.source) + ' • ' + formatNumber(Math.round((item.file.size || 0) / 1024)) + ' KB</div>' +
+            '<div class="pending-media-actions">' +
+              '<button type="button" class="ghost small-btn remove-pending-media" data-id="' + escapeHtml(item.localId) + '">Remove</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    pendingMediaPreview.innerHTML = html;
   }
 
   function resetForm() {
@@ -400,51 +374,82 @@ document.addEventListener('DOMContentLoaded', function () {
     totalWeightInput.value = '';
     netPayloadInput.value = '';
     vacuumDropInput.value = '';
-    selectedMediaInfo.textContent = '';
+    clearPendingMedia();
+    mediaDescriptionInput.value = '';
     cancelEditBtn.hidden = true;
-    saveBtn.textContent = 'Save Log';
+    saveBtn.textContent = 'Save Final Log';
+    saveDraftBtn.textContent = 'Save Draft';
   }
 
-  function buildEntryFromForm() {
+  function buildEntryFromForm(status) {
     const axleCount = parseInt(axlesSelect.value, 10) || 0;
     const axleWeights = [];
     for (let i = 1; i <= axleCount; i++) {
-      const el = document.getElementById('axleWeight_' + i);
-      axleWeights.push(el && el.value !== '' ? parseFloat(el.value) : null);
+      const input = document.getElementById('axleWeight_' + i);
+      const value = input ? input.value.trim() : '';
+      axleWeights.push(value === '' ? null : Number(value));
     }
 
-    recalcComputedFields();
-
+    const nowIso = new Date().toISOString();
     return {
       id: editingIdInput.value || uid(),
+      status: status,
       tubeNumber: tubeNumberInput.value.trim(),
       destination: destinationInput.value.trim(),
       trailerType: trailerTypeInput.value.trim(),
-      trailerLength: trailerLengthInput.value === '' ? null : parseFloat(trailerLengthInput.value),
+      trailerLength: trailerLengthInput.value === '' ? null : Number(trailerLengthInput.value),
       trailerNumber: trailerNumberInput.value.trim(),
-      truckWeight: truckWeightInput.value === '' ? null : parseFloat(truckWeightInput.value),
-      emptyTrailerWeight: emptyTrailerWeightInput.value === '' ? null : parseFloat(emptyTrailerWeightInput.value),
-      axles: axlesSelect.value || null,
+      truckWeight: truckWeightInput.value === '' ? null : Number(truckWeightInput.value),
+      emptyTrailerWeight: emptyTrailerWeightInput.value === '' ? null : Number(emptyTrailerWeightInput.value),
+      axles: axlesSelect.value === '' ? null : Number(axlesSelect.value),
       axleWeights: axleWeights,
-      truckAndTrailerWeight: totalWeightInput.value === '' ? null : parseFloat(totalWeightInput.value),
-      netPayload: netPayloadInput.value === '' ? null : parseFloat(netPayloadInput.value),
-      heightBeforeVacuum: heightBeforeInput.value === '' ? null : parseFloat(heightBeforeInput.value),
-      heightAfterVacuum: heightAfterInput.value === '' ? null : parseFloat(heightAfterInput.value),
-      vacuumDrop: vacuumDropInput.value === '' ? null : parseFloat(vacuumDropInput.value),
-      mfdDate: mfdDateInput.value || null,
-      departureDate: departureDateInput.value || null,
+      truckAndTrailerWeight: totalWeightInput.value === '' ? null : Number(totalWeightInput.value),
+      netPayload: netPayloadInput.value === '' ? null : Number(netPayloadInput.value),
+      heightBeforeVacuum: heightBeforeInput.value === '' ? null : Number(heightBeforeInput.value),
+      heightAfterVacuum: heightAfterInput.value === '' ? null : Number(heightAfterInput.value),
+      vacuumDrop: vacuumDropInput.value === '' ? null : Number(vacuumDropInput.value),
+      mfdDate: mfdDateInput.value,
+      departureDate: departureDateInput.value,
       notes: notesInput.value.trim(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: nowIso,
+      createdAt: nowIso
     };
   }
 
-  function validateEntry(entry) {
-    if (!entry.truckWeight || !entry.emptyTrailerWeight || !entry.tubeNumber || !entry.destination || !entry.trailerType || !entry.axles) {
-      return 'Please fill all required fields.';
+  function hasDraftContent(entry) {
+    return Boolean(
+      entry.tubeNumber ||
+      entry.destination ||
+      entry.trailerType ||
+      entry.trailerLength != null ||
+      entry.trailerNumber ||
+      entry.truckWeight != null ||
+      entry.emptyTrailerWeight != null ||
+      entry.axles != null ||
+      (entry.axleWeights || []).some(function (weight) { return weight != null; }) ||
+      entry.heightBeforeVacuum != null ||
+      entry.heightAfterVacuum != null ||
+      entry.mfdDate ||
+      entry.departureDate ||
+      entry.notes ||
+      pendingMedia.length
+    );
+  }
+
+  function validateEntry(entry, mode) {
+    if (mode === 'draft') {
+      return hasDraftContent(entry) ? '' : 'Add at least one field or some media before saving a draft.';
     }
-    if (!entry.truckAndTrailerWeight || Number.isNaN(entry.truckAndTrailerWeight)) {
-      return 'Truck + trailer weight could not be calculated. Check the axle weights.';
+
+    if (!entry.tubeNumber) return 'Tube number is required for a final log.';
+    if (!entry.destination) return 'Customer and destination are required for a final log.';
+    if (!entry.trailerType) return 'Trailer type is required for a final log.';
+    if (entry.truckWeight == null) return 'Truck weight is required for a final log.';
+    if (entry.emptyTrailerWeight == null) return 'Empty trailer weight is required for a final log.';
+    if (entry.axles == null) return 'Number of axles is required for a final log.';
+    if ((entry.axleWeights || []).length !== entry.axles) return 'Enter each axle weight before saving a final log.';
+    if (entry.axleWeights.some(function (weight) { return weight == null || !Number.isFinite(weight); })) {
+      return 'Every axle needs a weight before saving a final log.';
     }
     return '';
   }
@@ -457,6 +462,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (search) {
       entries = entries.filter(function (entry) {
         return [
+          entry.status,
           entry.tubeNumber,
           entry.destination,
           entry.trailerType,
@@ -469,13 +475,16 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     entries.sort(function (a, b) {
-      if (sort === 'oldest') {
-        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+      if (sort === 'created') {
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
       }
       if (sort === 'tube') {
         return String(a.tubeNumber || '').localeCompare(String(b.tubeNumber || ''), undefined, { numeric: true, sensitivity: 'base' });
       }
-      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      if (sort === 'status') {
+        return String(a.status || '').localeCompare(String(b.status || '')) || (new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+      }
+      return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
     });
 
     return entries;
@@ -483,12 +492,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
   async function loadEntries() {
     revokeObjectUrls();
-    const allEntries = getEntries();
+    const allEntries = getEntries().slice().sort(function (a, b) {
+      return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
+    });
     const entries = getFilteredAndSortedEntries();
 
     statCount.textContent = String(allEntries.length);
     statShown.textContent = String(entries.length);
-    statLastSaved.textContent = allEntries.length ? formatDateTime(allEntries[0].createdAt) : '—';
+    statLastSaved.textContent = allEntries.length ? formatDateTime(allEntries[0].updatedAt || allEntries[0].createdAt) : '—';
 
     if (!entries.length) {
       entriesEl.innerHTML = '<li class="empty-state">No entries yet.</li>';
@@ -517,26 +528,30 @@ document.addEventListener('DOMContentLoaded', function () {
                 '<div class="media-card-body">' +
                   '<div class="media-name">' + escapeHtml(item.name) + '</div>' +
                   (item.description ? '<div class="media-desc">' + escapeHtml(item.description) + '</div>' : '') +
-                  '<div class="media-meta">' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div>' +
+                  '<div class="media-meta">' + escapeHtml(item.source || 'files') + ' • ' + formatNumber(Math.round((item.size || 0) / 1024)) + ' KB</div>' +
                 '</div>' +
               '</div>'
             );
           }).join('') + '</div>'
         : '';
 
+      const statusClass = entry.status === 'draft' ? 'draft' : 'final';
+      const statusLabel = entry.status === 'draft' ? 'Draft' : 'Final';
+
       return (
         '<li class="entry">' +
           '<div class="entry-top">' +
             '<div>' +
-              '<div class="entry-title">Tube ' + escapeHtml(entry.tubeNumber) + ' • ' + escapeHtml(entry.destination) + '</div>' +
+              '<div class="status-chip ' + statusClass + '">' + statusLabel + '</div>' +
+              '<div class="entry-title">Tube ' + escapeHtml(entry.tubeNumber || '—') + ' • ' + escapeHtml(entry.destination || 'No destination yet') + '</div>' +
               '<div class="entry-meta">Trailer: ' + escapeHtml(entry.trailerType || '-') + ' • Length: ' + escapeHtml(entry.trailerLength ?? '-') + ' ft • Trailer #: ' + escapeHtml(entry.trailerNumber || '-') + '</div>' +
             '</div>' +
-            '<div class="entry-date">' + formatDateTime(entry.createdAt) + '</div>' +
+            '<div class="entry-date">Updated ' + formatDateTime(entry.updatedAt || entry.createdAt) + '</div>' +
           '</div>' +
           '<div class="entry-weights">Truck: ' + formatNumber(entry.truckWeight) + ' lbs • Empty trailer: ' + formatNumber(entry.emptyTrailerWeight) + ' lbs • Truck + trailer: ' + formatNumber(entry.truckAndTrailerWeight) + ' lbs • Net payload: ' + formatNumber(entry.netPayload) + ' lbs</div>' +
           '<div class="entry-meta">Axles: ' + escapeHtml(entry.axles || '-') + ' • Axle weights: ' + escapeHtml(axleSummary) + '</div>' +
           '<div class="entry-meta">Height before: ' + escapeHtml(entry.heightBeforeVacuum ?? '-') + ' ft • After: ' + escapeHtml(entry.heightAfterVacuum ?? '-') + ' ft • Drop: ' + escapeHtml(entry.vacuumDrop ?? '-') + ' ft</div>' +
-          '<div class="entry-meta">Mfd: ' + formatDateOnly(entry.mfdDate) + ' • Departure: ' + formatDateOnly(entry.departureDate) + '</div>' +
+          '<div class="entry-meta">Mfd: ' + formatDateOnly(entry.mfdDate) + ' • Departure: ' + formatDateOnly(entry.departureDate) + ' • Created: ' + formatDateTime(entry.createdAt) + '</div>' +
           (entry.notes ? '<div class="entry-notes"><strong>Notes:</strong> ' + escapeHtml(entry.notes) + '</div>' : '') +
           mediaHtml +
           '<div class="entry-actions">' +
@@ -571,30 +586,27 @@ document.addEventListener('DOMContentLoaded', function () {
     departureDateInput.value = entry.departureDate || '';
     notesInput.value = entry.notes || '';
     mediaDescriptionInput.value = '';
-    selectedMediaInfo.textContent = 'Existing attached media will stay unless you delete the log. New files you select now will be added to this log.';
+    clearPendingMedia();
+    selectedMediaInfo.textContent = 'Existing attached media will stay unless you delete the log. Any new files you add now will be attached when you save.';
     cancelEditBtn.hidden = false;
-    saveBtn.textContent = 'Update Log';
+    saveBtn.textContent = entry.status === 'draft' ? 'Save Final Log' : 'Update Final Log';
+    saveDraftBtn.textContent = 'Update Draft';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function saveOrUpdateEntry(entry, files, mediaDescription) {
+  async function saveOrUpdateEntry(entry, itemsToAttach, mediaDescription) {
     const entries = getEntries();
     const existingIndex = entries.findIndex(function (item) { return item.id === entry.id; });
-    let createdAt = entry.createdAt;
 
     if (existingIndex >= 0) {
-      createdAt = entries[existingIndex].createdAt;
-      entry.createdAt = createdAt;
-      entry.updatedAt = new Date().toISOString();
+      entry.createdAt = entries[existingIndex].createdAt;
       entries[existingIndex] = entry;
     } else {
-      entry.createdAt = new Date().toISOString();
-      entry.updatedAt = entry.createdAt;
       entries.unshift(entry);
     }
 
-    if (files.length) {
-      await saveMediaForLog(entry.id, files, mediaDescription);
+    if (itemsToAttach.length) {
+      await saveMediaForLog(entry.id, itemsToAttach, mediaDescription);
     }
 
     const mediaCount = (await getMediaForLog(entry.id)).length;
@@ -610,9 +622,8 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   async function deleteEntry(entryId) {
-    const entries = getEntries();
-    const filtered = entries.filter(function (entry) { return entry.id !== entryId; });
-    setEntries(filtered);
+    const entries = getEntries().filter(function (entry) { return entry.id !== entryId; });
+    setEntries(entries);
     await deleteMediaForLog(entryId);
   }
 
@@ -624,6 +635,152 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  function blobToDataUrl(blob) {
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = function () { reject(reader.error); };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const parts = String(dataUrl).split(',');
+    const meta = parts[0] || '';
+    const match = meta.match(/data:(.*?);base64/);
+    const mime = match ? match[1] : 'application/octet-stream';
+    const binary = atob(parts[1] || '');
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  async function exportBackup() {
+    const data = getEntries();
+    const media = await getAllMedia();
+
+    if (!data.length && !media.length) {
+      setStatus('No logs or media to export.', 'warning');
+      return;
+    }
+
+    const mediaPayload = await Promise.all(media.map(async function (item) {
+      return {
+        id: item.id,
+        logId: item.logId,
+        name: item.name,
+        type: item.type,
+        size: item.size,
+        description: item.description,
+        source: item.source || 'files',
+        createdAt: item.createdAt,
+        dataUrl: await blobToDataUrl(item.blob)
+      };
+    }));
+
+    const payload = {
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      entries: buildExportPayload(data),
+      media: mediaPayload
+    };
+
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = url;
+    a.download = 'trailer-log-backup-' + ts + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setStatus('Backup exported with logs and attached media.', 'success');
+  }
+
+  async function importBackup(text) {
+    const parsed = JSON.parse(text);
+    const importedEntries = Array.isArray(parsed)
+      ? parsed
+      : (parsed && Array.isArray(parsed.entries) ? parsed.entries : null);
+
+    if (!importedEntries || !importedEntries.length) {
+      throw new Error('No valid entries found.');
+    }
+
+    const existing = getEntries();
+    const existingIds = new Set(existing.map(function (entry) { return entry.id; }));
+    const idMap = new Map();
+
+    const sanitizedEntries = importedEntries.map(function (entry) {
+      const clone = Object.assign({}, entry);
+      const originalId = clone.id || uid();
+      if (!clone.id || existingIds.has(clone.id)) {
+        clone.id = uid();
+      }
+      idMap.set(originalId, clone.id);
+      clone.status = clone.status === 'draft' ? 'draft' : 'final';
+      clone.createdAt = clone.createdAt || new Date().toISOString();
+      clone.updatedAt = clone.updatedAt || clone.createdAt;
+      delete clone.mediaCount;
+      existingIds.add(clone.id);
+      return clone;
+    });
+
+    setEntries(sanitizedEntries.concat(existing));
+
+    const importedMedia = parsed && Array.isArray(parsed.media) ? parsed.media : [];
+    if (importedMedia.length) {
+      const records = importedMedia
+        .filter(function (item) { return item && item.dataUrl; })
+        .map(function (item) {
+          return {
+            id: uid(),
+            logId: idMap.get(item.logId) || item.logId,
+            name: item.name || 'media-file',
+            type: item.type || 'application/octet-stream',
+            size: item.size || 0,
+            description: item.description || '',
+            source: item.source || 'imported backup',
+            createdAt: item.createdAt || new Date().toISOString(),
+            blob: dataUrlToBlob(item.dataUrl)
+          };
+        });
+
+      if (records.length) {
+        await saveMediaRecords(records);
+      }
+    }
+
+    await loadEntries();
+    setStatus('Imported ' + sanitizedEntries.length + ' log(s).' + (importedMedia.length ? ' Attached media was restored too.' : ''), 'success');
+  }
+
+  async function saveCurrentEntry(mode) {
+    const entry = buildEntryFromForm(mode);
+    const error = validateEntry(entry, mode);
+    if (error) {
+      setStatus(error, 'error');
+      return;
+    }
+
+    const pendingToAttach = pendingMedia.slice();
+    const mediaDescription = mediaDescriptionInput.value.trim();
+    const wasEditing = Boolean(editingIdInput.value);
+
+    try {
+      await saveOrUpdateEntry(entry, pendingToAttach, mediaDescription);
+      resetForm();
+      await loadEntries();
+      setStatus((mode === 'draft' ? 'Draft' : 'Log') + (wasEditing ? ' updated.' : ' saved.'), 'success');
+    } catch (err) {
+      console.error(err);
+      setStatus('Could not save the entry. Large videos can exceed your browser storage limit.', 'error');
+    }
+  }
+
   axlesSelect.addEventListener('change', function () {
     renderAxleInputs(parseInt(axlesSelect.value, 10) || 0);
     recalcComputedFields();
@@ -633,32 +790,53 @@ document.addEventListener('DOMContentLoaded', function () {
     input.addEventListener('input', recalcComputedFields);
   });
 
-  mediaFilesInput.addEventListener('change', updateSelectedMediaInfo);
+  browseMediaBtn.addEventListener('click', function () {
+    mediaFilesInput.click();
+  });
+
+  takePhotoBtn.addEventListener('click', function () {
+    photoCaptureInput.click();
+  });
+
+  recordVideoBtn.addEventListener('click', function () {
+    videoCaptureInput.click();
+  });
+
+  clearPendingMediaBtn.addEventListener('click', function () {
+    clearPendingMedia();
+    setStatus('Pending media cleared.', 'warning');
+  });
+
+  mediaFilesInput.addEventListener('change', function () {
+    addPendingFiles(mediaFilesInput.files, 'file picker');
+  });
+
+  photoCaptureInput.addEventListener('change', function () {
+    addPendingFiles(photoCaptureInput.files, 'camera photo');
+  });
+
+  videoCaptureInput.addEventListener('change', function () {
+    addPendingFiles(videoCaptureInput.files, 'camera video');
+  });
+
+  pendingMediaPreview.addEventListener('click', function (event) {
+    const button = event.target.closest('.remove-pending-media');
+    if (!button) return;
+    const targetId = button.getAttribute('data-id');
+    pendingMedia = pendingMedia.filter(function (item) { return item.localId !== targetId; });
+    renderPendingMediaPreview();
+  });
+
   searchInput.addEventListener('input', function () { loadEntries(); });
   sortSelect.addEventListener('change', function () { loadEntries(); });
 
-  form.addEventListener('submit', async function (event) {
+  form.addEventListener('submit', function (event) {
     event.preventDefault();
-    const isEditing = Boolean(editingIdInput.value);
-    const entry = buildEntryFromForm();
-    const error = validateEntry(entry);
-    if (error) {
-      setStatus(error, 'error');
-      return;
-    }
+    saveCurrentEntry('final');
+  });
 
-    const files = Array.from(mediaFilesInput.files || []);
-    const mediaDescription = mediaDescriptionInput.value.trim();
-
-    try {
-      await saveOrUpdateEntry(entry, files, mediaDescription);
-      resetForm();
-      await loadEntries();
-      setStatus(isEditing ? 'Log updated.' : 'Log saved.', 'success');
-    } catch (err) {
-      console.error(err);
-      setStatus('Could not save the log. Large videos can exceed your browser storage limit.', 'error');
-    }
+  saveDraftBtn.addEventListener('click', function () {
+    saveCurrentEntry('draft');
   });
 
   cancelEditBtn.addEventListener('click', function () {
@@ -677,13 +855,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (button.classList.contains('edit-entry')) {
       populateFormForEdit(entry);
-      setStatus('Editing log ' + entry.tubeNumber + '.', 'warning');
+      setStatus('Editing ' + (entry.status === 'draft' ? 'draft' : 'log') + '.', 'warning');
       return;
     }
 
     if (button.classList.contains('duplicate-entry')) {
       const copy = Object.assign({}, entry, {
         id: uid(),
+        status: 'draft',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         mediaCount: 0
@@ -693,7 +872,7 @@ document.addEventListener('DOMContentLoaded', function () {
       allEntries.unshift(copy);
       setEntries(allEntries);
       await loadEntries();
-      setStatus('Log duplicated. Media is not copied with duplicates.', 'success');
+      setStatus('Log duplicated as a draft. Media is not copied with duplicates.', 'success');
       return;
     }
 
@@ -714,32 +893,11 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  exportBtn.addEventListener('click', async function () {
-    const data = getEntries();
-    if (!data.length) {
-      setStatus('No entries to export.', 'warning');
-      return;
-    }
-
-    try {
-      setStatus('Preparing backup with attached media...', 'warning');
-      const exportPackage = await buildExportPackage(data);
-      const json = JSON.stringify(exportPackage, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      a.href = url;
-      a.download = 'trailer-log-backup-' + ts + '.json';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setStatus('Backup exported with logs and attached media. Large videos will make the backup file much bigger.', 'success');
-    } catch (err) {
+  exportBtn.addEventListener('click', function () {
+    exportBackup().catch(function (err) {
       console.error(err);
-      setStatus('Could not build the backup file. Try smaller videos or fewer attachments.', 'error');
-    }
+      setStatus('Could not export the backup.', 'error');
+    });
   });
 
   importBtn.addEventListener('click', function () {
@@ -752,54 +910,20 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = async function (loadEvent) {
-      try {
-        setStatus('Importing backup file...', 'warning');
-        const text = loadEvent.target.result;
-        const parsed = JSON.parse(text);
-        const imported = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.entries) ? parsed.entries : null);
-        const importedMedia = parsed && Array.isArray(parsed.media) ? parsed.media : [];
-
-        if (!imported || !imported.length) {
-          setStatus('No valid entries found in the selected file.', 'error');
-          return;
-        }
-
-        const existing = getEntries();
-        const existingIds = new Set(existing.map(function (entry) { return entry.id; }));
-        const idMap = {};
-        const sanitized = imported.map(function (entry) {
-          const clone = Object.assign({}, entry);
-          const originalId = clone.id;
-          if (!clone.id || existingIds.has(clone.id)) clone.id = uid();
-          existingIds.add(clone.id);
-          idMap[originalId] = clone.id;
-          if (!clone.createdAt) clone.createdAt = new Date().toISOString();
-          clone.updatedAt = new Date().toISOString();
-          delete clone.mediaCount;
-          return clone;
-        });
-
-        setEntries(sanitized.concat(existing));
-        const importedMediaCount = await importMediaRecords(importedMedia, idMap);
-        await loadEntries();
-
-        if (importedMedia.length) {
-          setStatus('Imported ' + sanitized.length + ' log(s) and ' + importedMediaCount + ' media file(s).', 'success');
-        } else {
-          setStatus('Imported ' + sanitized.length + ' log(s). This backup did not contain media attachments.', 'success');
-        }
-      } catch (err) {
+    reader.onload = function (loadEvent) {
+      importBackup(loadEvent.target.result).catch(function (err) {
         console.error(err);
-        setStatus('Failed to import file. Use a JSON backup exported from this app.', 'error');
-      }
+        setStatus('Failed to import backup. Use a JSON backup from this app.', 'error');
+      });
     };
     reader.readAsText(file);
   });
 
   clearBtn.addEventListener('click', async function () {
-    if (!getEntries().length) {
-      setStatus('Log is already empty.', 'warning');
+    const hasEntries = getEntries().length;
+    const hasMedia = (await getAllMedia()).length;
+    if (!hasEntries && !hasMedia) {
+      setStatus('The log is already empty.', 'warning');
       return;
     }
 
@@ -823,5 +947,6 @@ document.addEventListener('DOMContentLoaded', function () {
     setStatus('IndexedDB could not be opened. Media uploads may not work in this browser.', 'error');
   });
 
+  renderPendingMediaPreview();
   loadEntries();
 });

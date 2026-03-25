@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Trailer Weight Logger</title>
   <meta name="theme-color" content="#102033">
-  <meta name="description" content="Offline-ready trailer weight logger PWA for axle weights, trailer details, notes, and local media attachments.">
+  <meta name="description" content="Offline-ready trailer weight logger PWA for axle weights, trailer details, notes, draft saves, and local media attachments.">
   <link rel="manifest" href="./manifest.json">
   <style>
     :root{
@@ -42,7 +42,7 @@
       max-width:1180px;
       margin:0 auto;
       display:grid;
-      grid-template-columns:1.06fr 0.94fr;
+      grid-template-columns:1.08fr 0.92fr;
       gap:18px;
       align-items:start;
     }
@@ -115,11 +115,6 @@
       font-weight:700;
     }
 
-    input[type="file"]{
-      padding:10px;
-      cursor:pointer;
-    }
-
     textarea{resize:vertical; min-height:94px}
 
     .hint{font-size:.82rem; color:var(--muted); margin-top:6px; display:block}
@@ -132,7 +127,7 @@
       margin-top:10px;
     }
 
-    .toolbar, .entry-actions, .log-actions{
+    .toolbar, .entry-actions, .log-actions, .media-action-row{
       display:flex;
       gap:10px;
       flex-wrap:wrap;
@@ -141,6 +136,7 @@
 
     .toolbar{margin-bottom:14px}
     .log-actions{margin-top:18px}
+    .media-action-row{margin-top:10px}
 
     button{
       padding:11px 14px;
@@ -171,6 +167,7 @@
       border:1px solid var(--line);
       box-shadow:none;
     }
+    button.small-btn{padding:8px 11px; font-size:.88rem; border-radius:10px}
 
     .badge-row{
       display:grid;
@@ -230,6 +227,37 @@
     .entry-actions{margin-top:12px}
     .entry-actions button{padding:8px 11px; font-size:.9rem; border-radius:10px}
 
+    .status-chip{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:5px 10px;
+      border-radius:999px;
+      font-size:.78rem;
+      font-weight:800;
+      letter-spacing:.03em;
+      border:1px solid rgba(255,255,255,0.08);
+      margin-bottom:8px;
+    }
+    .status-chip.final{
+      background:rgba(46,194,126,0.14);
+      color:#95f0bf;
+      border-color:rgba(46,194,126,0.28);
+    }
+    .status-chip.draft{
+      background:rgba(242,184,75,0.15);
+      color:#ffd98f;
+      border-color:rgba(242,184,75,0.3);
+    }
+
+    .media-panel{
+      margin-top:14px;
+      padding:14px;
+      border-radius:14px;
+      background:rgba(255,255,255,0.03);
+      border:1px solid rgba(255,255,255,0.08);
+    }
+
     .media-grid{
       display:grid;
       grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
@@ -237,7 +265,7 @@
       margin-top:12px;
     }
 
-    .media-card{
+    .media-card,.pending-media-card{
       background:rgba(255,255,255,0.03);
       border:1px solid rgba(255,255,255,0.07);
       border-radius:14px;
@@ -245,7 +273,9 @@
     }
 
     .media-card img,
-    .media-card video{
+    .media-card video,
+    .pending-media-card img,
+    .pending-media-card video{
       display:block;
       width:100%;
       aspect-ratio:16/10;
@@ -253,10 +283,11 @@
       background:#08111d;
     }
 
-    .media-card-body{padding:10px}
+    .media-card-body,.pending-media-body{padding:10px}
     .media-name{font-size:.84rem;font-weight:700;color:#e7f1ff;word-break:break-word}
     .media-desc{font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.4}
     .media-meta{font-size:.76rem;color:#92a8c8;margin-top:6px}
+    .pending-media-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 
     .empty-state{
       padding:22px;
@@ -269,6 +300,7 @@
 
     .search-row{display:grid; grid-template-columns:1fr 170px; gap:10px}
     .footer-note{margin-top:14px; color:var(--muted); font-size:.82rem; line-height:1.5}
+    .hidden-file{display:none}
 
     @media (max-width: 920px){
       .app{grid-template-columns:1fr}
@@ -279,7 +311,7 @@
       .grid-2,.grid-3,.search-row,.badge-row{grid-template-columns:1fr}
       .entry-top{flex-direction:column}
       button{width:100%}
-      .entry-actions button{width:auto; flex:1 1 0}
+      .entry-actions button,.media-action-row button,.pending-media-actions button{width:auto; flex:1 1 0}
     }
   </style>
 </head>
@@ -288,26 +320,26 @@
     <section class="panel">
       <div class="panel-header">
         <h1>Trailer Weight Logger</h1>
-        <p class="subtext">Log trailer loads, axle weights, trailer details, dates, notes, and local media. Everything stays on this device and browser for now.</p>
+        <p class="subtext">Save full logs or drafts, attach photos and videos, and keep everything local on the device for now.</p>
         <div class="pill" id="installHint">Offline-ready PWA</div>
       </div>
 
       <div class="panel-body">
-        <form id="logForm">
+        <form id="logForm" novalidate>
           <input type="hidden" id="editingId">
 
           <div class="grid-2">
             <label>Tube Number
-              <input type="text" id="tubeNumber" required autocomplete="off">
+              <input type="text" id="tubeNumber" autocomplete="off">
             </label>
             <label>Customer and Destination
-              <input type="text" id="destination" required autocomplete="off">
+              <input type="text" id="destination" autocomplete="off">
             </label>
           </div>
 
           <div class="grid-3">
             <label>Trailer type
-              <input type="text" id="trailerType" required autocomplete="off">
+              <input type="text" id="trailerType" autocomplete="off">
             </label>
             <label>Trailer length (ft)
               <input type="number" step="any" id="trailerLength" inputmode="decimal">
@@ -319,13 +351,13 @@
 
           <div class="grid-3">
             <label>Truck weight (lbs)
-              <input type="number" step="any" id="truckWeight" required inputmode="decimal">
+              <input type="number" step="any" id="truckWeight" inputmode="decimal">
             </label>
             <label>Empty trailer weight (lbs)
-              <input type="number" step="any" id="emptyTrailerWeight" required inputmode="decimal">
+              <input type="number" step="any" id="emptyTrailerWeight" inputmode="decimal">
             </label>
             <label>Number of axles
-              <select id="axles" required>
+              <select id="axles">
                 <option value="">Select</option>
                 <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option>
                 <option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option>
@@ -375,26 +407,37 @@
             <textarea id="notes" rows="4" placeholder="Add any special notes, load details, issues, or reminders..."></textarea>
           </label>
 
-          <div class="grid-2">
-            <label>Upload photos or video
-              <input type="file" id="mediaFiles" accept="image/*,video/*" multiple>
-              <span class="hint">You can attach multiple pictures and videos to this log. Files stay local in this browser.</span>
-            </label>
+          <div class="media-panel">
+            <div class="section-title">Attach media</div>
+            <span class="hint">Use browse, take a photo, or record a video. The description below is saved with the media files you add before saving the log.</span>
+
+            <div class="media-action-row">
+              <button type="button" id="browseMediaBtn" class="secondary">Add Files</button>
+              <button type="button" id="takePhotoBtn" class="secondary">Take Photo</button>
+              <button type="button" id="recordVideoBtn" class="secondary">Record Video</button>
+              <button type="button" id="clearPendingMediaBtn" class="ghost">Clear Pending</button>
+            </div>
+
+            <input class="hidden-file" type="file" id="mediaFiles" accept="image/*,video/*" multiple>
+            <input class="hidden-file" type="file" id="photoCaptureInput" accept="image/*" capture="environment">
+            <input class="hidden-file" type="file" id="videoCaptureInput" accept="video/*" capture="environment">
+
             <label>Media description
-              <textarea id="mediaDescription" rows="3" placeholder="Brief note about the selected pictures or videos..."></textarea>
-              <span class="hint">This description is stored with the attached media for this log.</span>
+              <input type="text" id="mediaDescription" maxlength="140" placeholder="Example: load after vacuum, trailer condition, shipping issue...">
             </label>
+
+            <div id="selectedMediaInfo" class="hint"></div>
+            <div id="pendingMediaPreview"></div>
           </div>
 
-          <div id="selectedMediaInfo" class="hint"></div>
-
           <div class="log-actions">
-            <button type="submit" id="saveBtn">Save Log</button>
+            <button type="submit" id="saveBtn">Save Final Log</button>
+            <button type="button" id="saveDraftBtn" class="warning">Save Draft</button>
             <button type="button" id="cancelEditBtn" class="secondary" hidden>Cancel Edit</button>
-            <button type="button" id="exportBtn" class="secondary">Export Log</button>
-            <button type="button" id="importBtn" class="secondary">Import Log</button>
+            <button type="button" id="exportBtn" class="secondary">Export Backup</button>
+            <button type="button" id="importBtn" class="secondary">Import Backup</button>
             <button type="button" id="clearBtn" class="danger">Clear All</button>
-            <input type="file" id="importFile" accept=".txt,.json" style="display:none">
+            <input type="file" id="importFile" accept=".json" class="hidden-file">
           </div>
 
           <div id="statusMessage" class="status" aria-live="polite"></div>
@@ -405,16 +448,17 @@
     <section class="panel">
       <div class="panel-header">
         <h2>Saved Entries</h2>
-        <p class="subtext">Search by tube number, customer, destination, trailer number, or notes.</p>
+        <p class="subtext">Search by tube number, customer, destination, trailer number, status, or notes.</p>
       </div>
       <div class="panel-body">
         <div class="toolbar">
           <div class="search-row" style="width:100%">
             <input type="search" id="searchInput" placeholder="Search logs...">
             <select id="sortSelect">
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
+              <option value="updated">Last updated</option>
+              <option value="created">Created date</option>
               <option value="tube">Tube number</option>
+              <option value="status">Status</option>
             </select>
           </div>
         </div>
@@ -429,13 +473,13 @@
             <div class="value" id="statShown">0</div>
           </div>
           <div class="badge">
-            <div class="label">Last Saved</div>
+            <div class="label">Last Updated</div>
             <div class="value" id="statLastSaved">—</div>
           </div>
         </div>
 
         <ul id="entries"></ul>
-        <div class="footer-note">Media is stored locally with its log on this device only. Export/import currently includes log data only and does not include the attached photos or videos.</div>
+        <div class="footer-note">Backups now include both the logs and their local attached media. Large videos can create large backup files.</div>
       </div>
     </section>
   </main>

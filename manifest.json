@@ -1,7 +1,7 @@
 {
   "name": "Trailer Weight Logger",
   "short_name": "TrailerLog",
-  "description": "PWA for logging trailer weights, axle weights, customer loads, notes, and local media.",
+  "description": "PWA for logging trailer weights, draft saves, notes, and local media with backups.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
