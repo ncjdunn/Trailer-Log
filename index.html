@@ -458,9 +458,11 @@
             <div class="section-title">Construction Sheet</div>
             <div class="construction-sheet-row">
               <button type="button" id="takeConstructionSheetBtn" class="secondary">Take Sheet Photo</button>
+              <button type="button" id="uploadConstructionSheetBtn" class="secondary">Upload .xlsm</button>
               <button type="button" id="removeConstructionSheetBtn" class="ghost" hidden>Remove Sheet</button>
             </div>
             <input class="hidden-file" type="file" id="constructionSheetCaptureInput" accept="image/*" capture="environment">
+            <input class="hidden-file" type="file" id="constructionSheetUploadInput" accept=".xlsm,application/vnd.ms-excel.sheet.macroenabled.12">
             <div id="constructionSheetStatus" class="hint construction-sheet-status">No construction sheet attached.</div>
           </div>
 
