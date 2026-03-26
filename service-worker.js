@@ -1,4 +1,4 @@
-const CACHE_NAME = 'trailer-weight-logger-v24-construction-xlsm-fix';
+const CACHE_NAME = 'trailer-weight-logger-v26';
 const FILES_TO_CACHE = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const FILES_TO_CACHE = [
   './manifest.json',
   './UFflag.png',
   './media-viewer.html',
+  './spreadsheet-viewer.html',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];

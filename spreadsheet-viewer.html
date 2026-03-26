@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Construction Sheet</title>
+  <meta name="theme-color" content="#4169E1">
+  <style>
+    :root{
+      --bg:#eef1f5;
+      --panel:#ffffff;
+      --text:#1f2a44;
+      --muted:#5f6f8c;
+      --line:#d7dee8;
+      --primary:#4169E1;
+      --primary-2:#2747B0;
+      --warn:#fff4d6;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+    body{display:flex;flex-direction:column}
+    .topbar{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;
+      position:sticky;top:0;z-index:20;border-bottom:1px solid var(--line);background:rgba(255,255,255,0.95);backdrop-filter:blur(8px)
+    }
+    .title-wrap{min-width:0}
+    .title{font-size:1rem;font-weight:800;line-height:1.2}
+    .subtitle{font-size:.82rem;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:58vw}
+    .actions{display:flex;gap:10px;align-items:center}
+    button{
+      padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:linear-gradient(180deg,var(--primary),var(--primary-2));
+      color:#fff;font:inherit;font-weight:700;cursor:pointer
+    }
+    .secondary{background:#fff;color:var(--text)}
+    .warning{margin:12px 14px 0;background:var(--warn);border:1px solid #ead9a1;border-radius:14px;padding:10px 12px;font-size:.9rem;line-height:1.45}
+    .sheet-tabs{display:flex;gap:8px;overflow:auto;padding:12px 14px 0}
+    .sheet-tab{
+      padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--text);font:inherit;font-weight:700;cursor:pointer;white-space:nowrap
+    }
+    .sheet-tab.active{background:linear-gradient(180deg,var(--primary),var(--primary-2));color:#fff;border-color:transparent}
+    .viewer{padding:12px 14px 20px}
+    .sheet-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:0 8px 24px rgba(39,71,176,.08);overflow:auto}
+    .empty{padding:28px 16px;text-align:center;color:var(--muted)}
+    .sheet-html{padding:10px;overflow:auto}
+    .sheet-html table{border-collapse:collapse;background:#fff;width:max-content;min-width:100%}
+    .sheet-html td,.sheet-html th{border:1px solid #d6deea;padding:8px 10px;vertical-align:top;min-width:80px;max-width:280px;word-break:break-word}
+    .sheet-html tr:nth-child(even) td{background:#fafcff}
+    .sheet-html th{background:#edf3ff;font-weight:800}
+    .sheet-html .row{display:flex}
+    .loader{padding:24px;text-align:center;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="title-wrap">
+      <div class="title" id="title">Construction Sheet</div>
+      <div class="subtitle" id="subtitle">Loading spreadsheet…</div>
+    </div>
+    <div class="actions">
+      <button type="button" class="secondary" id="backBtn">Back</button>
+    </div>
+  </div>
+
+  <div class="warning">Preview only. The workbook sheets and cell values can be viewed here, but Excel VBA macros do not run in browser-based viewers.</div>
+  <div class="sheet-tabs" id="sheetTabs" hidden></div>
+  <main class="viewer">
+    <div class="sheet-card" id="sheetCard">
+      <div class="loader" id="loader">Loading spreadsheet…</div>
+      <div class="sheet-html" id="sheetHtml" hidden></div>
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script>
+    (function () {
+      const DB_NAME = 'TrailerWeightLoggerDB';
+      const DB_VERSION = 3;
+      const MEDIA_STORE = 'media';
+      const titleEl = document.getElementById('title');
+      const subtitleEl = document.getElementById('subtitle');
+      const backBtn = document.getElementById('backBtn');
+      const sheetTabs = document.getElementById('sheetTabs');
+      const sheetHtml = document.getElementById('sheetHtml');
+      const loader = document.getElementById('loader');
+
+      function params() {
+        return new URLSearchParams(window.location.search);
+      }
+      function getReturnUrl() { return params().get('returnUrl') || ''; }
+      function getMediaId() { return params().get('mediaId') || ''; }
+      function getTempKey() { return params().get('tempKey') || ''; }
+      function getTitle() { return params().get('title') || 'Construction Sheet'; }
+
+      function dataUrlToArrayBuffer(dataUrl) {
+        const parts = String(dataUrl || '').split(',');
+        const binary = atob(parts[1] || '');
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes.buffer;
+      }
+
+      function openDb() {
+        return new Promise(function (resolve, reject) {
+          const request = indexedDB.open(DB_NAME, DB_VERSION);
+          request.onsuccess = function () { resolve(request.result); };
+          request.onerror = function () { reject(request.error); };
+        });
+      }
+
+      async function getMediaRecordById(mediaId) {
+        const db = await openDb();
+        return new Promise(function (resolve, reject) {
+          const tx = db.transaction(MEDIA_STORE, 'readonly');
+          const store = tx.objectStore(MEDIA_STORE);
+          const request = store.get(mediaId);
+          request.onsuccess = function () { resolve(request.result || null); };
+          request.onerror = function () { reject(request.error); };
+        });
+      }
+
+      function setLoading(text) {
+        loader.hidden = false;
+        loader.textContent = text;
+        sheetHtml.hidden = true;
+        sheetHtml.innerHTML = '';
+        sheetTabs.hidden = true;
+        sheetTabs.innerHTML = '';
+      }
+
+      function setError(text) {
+        loader.hidden = false;
+        loader.textContent = text;
+        sheetHtml.hidden = true;
+      }
+
+      function renderWorkbook(workbook) {
+        if (!workbook || !workbook.SheetNames || !workbook.SheetNames.length) {
+          setError('This workbook has no visible sheets to preview.');
+          return;
+        }
+
+        loader.hidden = true;
+        sheetTabs.hidden = false;
+        const names = workbook.SheetNames.slice();
+
+        function showSheet(name) {
+          const ws = workbook.Sheets[name];
+          if (!ws) {
+            sheetHtml.hidden = false;
+            sheetHtml.innerHTML = '<div class="empty">Could not load this sheet.</div>';
+            return;
+          }
+          const html = XLSX.utils.sheet_to_html(ws, { editable: false, id: 'sheet-preview' });
+          sheetHtml.hidden = false;
+          sheetHtml.innerHTML = html;
+          Array.from(sheetTabs.querySelectorAll('.sheet-tab')).forEach(function (btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-sheet') === name);
+          });
+          subtitleEl.textContent = name;
+        }
+
+        names.forEach(function (name, index) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'sheet-tab' + (index === 0 ? ' active' : '');
+          btn.textContent = name;
+          btn.setAttribute('data-sheet', name);
+          btn.addEventListener('click', function () { showSheet(name); });
+          sheetTabs.appendChild(btn);
+        });
+
+        showSheet(names[0]);
+      }
+
+      async function loadWorkbookArrayBuffer() {
+        const tempKey = getTempKey();
+        if (tempKey) {
+          const raw = sessionStorage.getItem(tempKey);
+          if (!raw) throw new Error('This spreadsheet preview is no longer available.');
+          const item = JSON.parse(raw);
+          if (item.title) titleEl.textContent = item.title;
+          subtitleEl.textContent = item.fileName || item.description || 'Spreadsheet';
+          return dataUrlToArrayBuffer(item.dataUrl);
+        }
+
+        const mediaId = getMediaId();
+        if (!mediaId) throw new Error('No spreadsheet was selected.');
+        const item = await getMediaRecordById(mediaId);
+        if (!item || !item.blob) throw new Error('This spreadsheet could not be found on this device.');
+        subtitleEl.textContent = item.name || item.description || 'Spreadsheet';
+        return await item.blob.arrayBuffer();
+      }
+
+      async function load() {
+        titleEl.textContent = getTitle();
+        setLoading('Loading spreadsheet…');
+
+        if (backBtn) {
+          backBtn.addEventListener('click', function () {
+            const returnUrl = getReturnUrl();
+            if (window.history.length > 1) {
+              history.back();
+              return;
+            }
+            if (returnUrl) {
+              window.location.assign(returnUrl);
+              return;
+            }
+            if (document.referrer) {
+              window.location.assign(document.referrer);
+              return;
+            }
+            window.location.assign('./index.html');
+          });
+        }
+
+        if (typeof XLSX === 'undefined') {
+          setError('Spreadsheet viewer library could not load. Make sure this device has internet access, then try again.');
+          return;
+        }
+
+        try {
+          const buffer = await loadWorkbookArrayBuffer();
+          const workbook = XLSX.read(buffer, { type: 'array', cellStyles: true, cellNF: true, bookVBA: true });
+          renderWorkbook(workbook);
+        } catch (err) {
+          console.error(err);
+          setError(err && err.message ? err.message : 'Could not open this spreadsheet in the app.');
+        }
+      }
+
+      load();
+    }());
+  </script>
+</body>
+</html>
