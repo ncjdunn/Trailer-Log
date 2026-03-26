@@ -25,17 +25,17 @@
     .title{font-size:1rem;font-weight:700}
     .note{padding:12px 14px;color:var(--muted);line-height:1.45}
     .viewer{flex:1;display:flex;align-items:center;justify-content:center;padding:12px}
+    .topbar-actions{display:flex;align-items:center;gap:10px}
     .viewer img,.viewer video{
       max-width:100%;max-height:calc(100vh - 120px);width:auto;height:auto;border-radius:14px;background:#000;
-      box-shadow:0 20px 50px rgba(0,0,0,0.45)
+      box-shadow:0 20px 50px rgba(0,0,0,0.45);transition:transform .18s ease
     }
-    .viewer img.force-landscape{
-      transform:rotate(90deg);
+    .viewer img.quarter-turn{
       max-width:calc(100vh - 120px);
       max-height:calc(100vw - 24px);
     }
     @media (orientation: landscape){
-      .viewer img.force-landscape{
+      .viewer img.quarter-turn{
         max-width:calc(100vw - 24px);
         max-height:calc(100vh - 120px);
       }
@@ -51,7 +51,10 @@
 <body>
   <div class="topbar">
     <div class="title">Media Viewer</div>
-    <button type="button" class="secondary" onclick="history.back()">Back</button>
+    <div class="topbar-actions">
+      <button type="button" id="rotateBtn">Rotate</button>
+      <button type="button" class="secondary" id="backBtn">Back</button>
+    </div>
   </div>
   <div id="note" class="note" hidden></div>
   <main class="viewer" id="viewer">
@@ -66,6 +69,20 @@
       const viewer = document.getElementById('viewer');
       const noteEl = document.getElementById('note');
       const titleEl = document.querySelector('.title');
+      const rotateBtn = document.getElementById('rotateBtn');
+      const backBtn = document.getElementById('backBtn');
+
+      let currentMediaNode = null;
+      let currentMediaId = null;
+      let currentTempKey = null;
+      let currentMediaRecord = null;
+      let currentRotation = 0;
+
+      function normalizeRotation(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return 0;
+        return ((n % 360) + 360) % 360;
+      }
 
       function getMediaId() {
         return new URLSearchParams(window.location.search).get('mediaId');
@@ -89,15 +106,71 @@
         if (titleEl) titleEl.textContent = title;
       }
 
-      function applyLandscapeIfNeeded(mediaNode, requestedLandscape) {
-        if (!requestedLandscape || !mediaNode || mediaNode.tagName !== 'IMG') return;
+      function setRotation(node, rotation) {
+        if (!node || node.tagName !== 'IMG') return;
+        currentRotation = normalizeRotation(rotation);
+        node.style.transform = 'rotate(' + currentRotation + 'deg)';
+        node.classList.toggle('quarter-turn', currentRotation === 90 || currentRotation === 270);
+      }
+
+      function setRotateUi(isImage) {
+        if (!rotateBtn) return;
+        rotateBtn.hidden = !isImage;
+        rotateBtn.disabled = !isImage;
+      }
+
+      function getAutoLandscapeRotation(node, requestedLandscape) {
+        if (!requestedLandscape || !node || node.tagName !== 'IMG') return 0;
+        return node.naturalHeight > node.naturalWidth ? 90 : 0;
+      }
+
+      async function persistRotationForSavedMedia(rotation) {
+        if (!currentMediaId || !currentMediaRecord) return;
+        try {
+          const db = await openDb();
+          await new Promise(function (resolve, reject) {
+            const tx = db.transaction(MEDIA_STORE, 'readwrite');
+            const store = tx.objectStore(MEDIA_STORE);
+            const updated = Object.assign({}, currentMediaRecord, { rotation: normalizeRotation(rotation) });
+            const request = store.put(updated);
+            request.onsuccess = function () {
+              currentMediaRecord = updated;
+              resolve();
+            };
+            request.onerror = function () { reject(request.error); };
+          });
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      function persistRotationForTempMedia(rotation) {
+        if (!currentTempKey) return;
+        try {
+          const raw = sessionStorage.getItem(currentTempKey);
+          if (!raw) return;
+          const item = JSON.parse(raw);
+          item.rotation = normalizeRotation(rotation);
+          sessionStorage.setItem(currentTempKey, JSON.stringify(item));
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      function applyInitialRotation(node, requestedLandscape, explicitRotation) {
+        if (!node || node.tagName !== 'IMG') {
+          setRotateUi(false);
+          return;
+        }
+        setRotateUi(true);
         const onReady = function () {
-          if (mediaNode.naturalHeight > mediaNode.naturalWidth) {
-            mediaNode.classList.add('force-landscape');
-          }
+          const startRotation = Number.isFinite(explicitRotation)
+            ? normalizeRotation(explicitRotation)
+            : getAutoLandscapeRotation(node, requestedLandscape);
+          setRotation(node, startRotation);
         };
-        if (mediaNode.complete) onReady();
-        else mediaNode.addEventListener('load', onReady, { once: true });
+        if (node.complete) onReady();
+        else node.addEventListener('load', onReady, { once: true });
       }
 
       function openDb() {
@@ -119,10 +192,29 @@
         });
       }
 
+      function wireButtons() {
+        if (rotateBtn) {
+          rotateBtn.addEventListener('click', async function () {
+            if (!currentMediaNode || currentMediaNode.tagName !== 'IMG') return;
+            const nextRotation = normalizeRotation(currentRotation + 90);
+            setRotation(currentMediaNode, nextRotation);
+            persistRotationForTempMedia(nextRotation);
+            await persistRotationForSavedMedia(nextRotation);
+          });
+        }
+        if (backBtn) {
+          backBtn.addEventListener('click', function () {
+            history.back();
+          });
+        }
+      }
+
       async function load() {
         applyViewerTitle();
+        wireButtons();
         const requestedLandscape = getLandscapeMode();
         const tempKey = getTempKey();
+        currentTempKey = tempKey;
         if (tempKey) {
           try {
             const raw = sessionStorage.getItem(tempKey);
@@ -131,7 +223,6 @@
               return;
             }
             const item = JSON.parse(raw);
-            const landscape = item.landscape || requestedLandscape;
             if (item.title && titleEl) { titleEl.textContent = item.title; document.title = item.title; }
             let mediaNode;
             if ((item.type || '').startsWith('video/')) {
@@ -147,7 +238,8 @@
             }
             viewer.innerHTML = '';
             viewer.appendChild(mediaNode);
-            applyLandscapeIfNeeded(mediaNode, landscape);
+            currentMediaNode = mediaNode;
+            applyInitialRotation(mediaNode, requestedLandscape || Boolean(item.landscape), Number(item.rotation));
             if (item.description) {
               noteEl.textContent = item.description;
               noteEl.hidden = false;
@@ -161,6 +253,7 @@
         }
 
         const mediaId = getMediaId();
+        currentMediaId = mediaId;
         if (!mediaId) {
           viewer.innerHTML = '<div class="empty">No media selected.</div>';
           return;
@@ -168,6 +261,7 @@
 
         try {
           const item = await getMediaRecordById(mediaId);
+          currentMediaRecord = item;
           if (!item || !item.blob) {
             viewer.innerHTML = '<div class="empty">This media item could not be found on this device.</div>';
             return;
@@ -189,7 +283,9 @@
 
           viewer.innerHTML = '';
           viewer.appendChild(mediaNode);
-          applyLandscapeIfNeeded(mediaNode, requestedLandscape);
+          currentMediaNode = mediaNode;
+          const explicitRotation = Number.isFinite(Number(item.rotation)) ? Number(item.rotation) : NaN;
+          applyInitialRotation(mediaNode, requestedLandscape, explicitRotation);
 
           if (item.description) {
             noteEl.textContent = item.description;

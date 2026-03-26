@@ -982,6 +982,7 @@ document.addEventListener('DOMContentLoaded', function () {
         description: item.description,
         source: item.source || 'files',
         role: item.role || 'general',
+        rotation: Number.isFinite(Number(item.rotation)) ? Number(item.rotation) : 0,
         createdAt: item.createdAt,
         dataUrl: await blobToDataUrl(item.blob)
       };
@@ -1200,6 +1201,7 @@ document.addEventListener('DOMContentLoaded', function () {
         description: item.description,
         source: item.source || 'files',
         role: item.role || 'general',
+        rotation: Number.isFinite(Number(item.rotation)) ? Number(item.rotation) : 0,
         createdAt: item.createdAt,
         dataUrl: await blobToDataUrl(item.blob)
       };
