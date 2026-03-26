@@ -64,7 +64,7 @@
   <script>
     (function () {
       const DB_NAME = 'TrailerWeightLoggerDB';
-      const DB_VERSION = 2;
+      const DB_VERSION = 3;
       const MEDIA_STORE = 'media';
       const viewer = document.getElementById('viewer');
       const noteEl = document.getElementById('note');
@@ -99,6 +99,10 @@
       function getViewerTitle() {
         return new URLSearchParams(window.location.search).get('title') || 'Media Viewer';
       }
+      function getReturnUrl() {
+        return new URLSearchParams(window.location.search).get('returnUrl') || '';
+      }
+
 
       function applyViewerTitle() {
         const title = getViewerTitle();
@@ -204,7 +208,20 @@
         }
         if (backBtn) {
           backBtn.addEventListener('click', function () {
-            history.back();
+            const returnUrl = getReturnUrl();
+            if (window.history.length > 1) {
+              history.back();
+              return;
+            }
+            if (returnUrl) {
+              window.location.assign(returnUrl);
+              return;
+            }
+            if (document.referrer) {
+              window.location.assign(document.referrer);
+              return;
+            }
+            window.location.assign('./index.html');
           });
         }
       }

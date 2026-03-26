@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const STORAGE_KEY = 'trailerLogs';
   const DB_NAME = 'TrailerWeightLoggerDB';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   const MEDIA_STORE = 'media';
 
   let dbPromise = null;
@@ -170,19 +170,19 @@ document.addEventListener('DOMContentLoaded', function () {
       setStatus('Could not open this media preview.', 'error');
       return;
     }
-    const params = new URLSearchParams({ tempKey: tempKey });
+    const params = new URLSearchParams({ tempKey: tempKey, returnUrl: window.location.href });
     if (viewerOptions.landscape) params.set('landscape', '1');
     if (viewerOptions.title) params.set('title', viewerOptions.title);
-    window.open('./media-viewer.html?' + params.toString(), '_blank');
+    window.location.assign('./media-viewer.html?' + params.toString());
   }
 
   function openSavedMediaViewer(mediaId, options) {
     if (!mediaId) return;
     const viewerOptions = options || {};
-    const params = new URLSearchParams({ mediaId: mediaId });
+    const params = new URLSearchParams({ mediaId: mediaId, returnUrl: window.location.href });
     if (viewerOptions.landscape) params.set('landscape', '1');
     if (viewerOptions.title) params.set('title', viewerOptions.title);
-    window.open('./media-viewer.html?' + params.toString(), '_blank');
+    window.location.assign('./media-viewer.html?' + params.toString());
   }
 
   async function openPendingMediaViewer(targetId) {
@@ -251,11 +251,22 @@ document.addEventListener('DOMContentLoaded', function () {
     return new Promise(function (resolve, reject) {
       const tx = db.transaction(MEDIA_STORE, 'readonly');
       const store = tx.objectStore(MEDIA_STORE);
-      const index = store.index('logId');
-      const request = index.getAll(logId);
+      let request;
+
+      try {
+        if (store.indexNames.contains('logId')) {
+          request = store.index('logId').getAll(logId);
+        } else {
+          request = store.getAll();
+        }
+      } catch (err) {
+        request = store.getAll();
+      }
 
       request.onsuccess = function () {
-        const results = request.result || [];
+        let results = request.result || [];
+        if (!Array.isArray(results)) results = [];
+        results = results.filter(function (item) { return item && item.logId === logId; });
         results.sort(function (a, b) {
           return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
         });
