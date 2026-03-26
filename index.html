@@ -167,6 +167,8 @@
     .toolbar{margin-bottom:14px}
     .log-actions{margin-top:18px}
     .media-action-row{margin-top:10px}
+    .sheet-top-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+    .sheet-top-row button{margin:0}
 
     .floating-save-bar{
       position:fixed;
@@ -376,7 +378,7 @@
       .brand-head{align-items:flex-start}
       .brand-logo{width:54px;height:54px}
       button{width:100%}
-      .entry-actions button,.media-action-row button,.pending-media-actions button,.construction-sheet-row button{width:auto; flex:1 1 0}
+      .entry-actions button,.media-action-row button,.pending-media-actions button,.construction-sheet-row button,.sheet-top-row button{width:auto; flex:1 1 0}
       .floating-save-bar{width:calc(100% - 16px);bottom:calc(8px + env(safe-area-inset-bottom, 0px));padding:8px;gap:8px}
       .floating-save-bar button{width:auto;flex:1 1 0;padding:12px 10px}
     }
@@ -398,6 +400,10 @@
       <div class="panel-body">
         <form id="logForm" novalidate>
           <input type="hidden" id="editingId">
+
+          <div class="sheet-top-row">
+            <button type="button" id="topOpenConstructionSheetBtn" class="secondary" hidden>Open Construction Sheet</button>
+          </div>
 
           <div class="media-panel">
             <div class="section-title">Attach media</div>
@@ -445,11 +451,21 @@
             <div class="section-title">Construction Sheet</div>
             <div class="construction-sheet-row">
               <button type="button" id="takeConstructionSheetBtn" class="secondary">Take Sheet Photo</button>
-              <button type="button" id="viewConstructionSheetBtn" class="secondary" hidden>Open Sheet</button>
               <button type="button" id="removeConstructionSheetBtn" class="ghost" hidden>Remove Sheet</button>
             </div>
             <input class="hidden-file" type="file" id="constructionSheetCaptureInput" accept="image/*" capture="environment">
             <div id="constructionSheetStatus" class="hint construction-sheet-status">No construction sheet attached.</div>
+          </div>
+
+          <div class="media-panel">
+            <div class="section-title">Cut Sheet</div>
+            <div class="construction-sheet-row">
+              <button type="button" id="takeCutSheetBtn" class="secondary">Take Cut Sheet Photo</button>
+              <button type="button" id="viewCutSheetBtn" class="secondary" hidden>Open Cut Sheet</button>
+              <button type="button" id="removeCutSheetBtn" class="ghost" hidden>Remove Cut Sheet</button>
+            </div>
+            <input class="hidden-file" type="file" id="cutSheetCaptureInput" accept="image/*" capture="environment">
+            <div id="cutSheetStatus" class="hint construction-sheet-status">No cut sheet attached.</div>
           </div>
 
           <div class="grid-3">

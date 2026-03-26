@@ -31,11 +31,16 @@ document.addEventListener('DOMContentLoaded', function () {
   const videoCaptureInput = document.getElementById('videoCaptureInput');
   const selectedMediaInfo = document.getElementById('selectedMediaInfo');
   const pendingMediaPreview = document.getElementById('pendingMediaPreview');
+  const topOpenConstructionSheetBtn = document.getElementById('topOpenConstructionSheetBtn');
   const takeConstructionSheetBtn = document.getElementById('takeConstructionSheetBtn');
-  const viewConstructionSheetBtn = document.getElementById('viewConstructionSheetBtn');
   const removeConstructionSheetBtn = document.getElementById('removeConstructionSheetBtn');
   const constructionSheetCaptureInput = document.getElementById('constructionSheetCaptureInput');
   const constructionSheetStatus = document.getElementById('constructionSheetStatus');
+  const takeCutSheetBtn = document.getElementById('takeCutSheetBtn');
+  const viewCutSheetBtn = document.getElementById('viewCutSheetBtn');
+  const removeCutSheetBtn = document.getElementById('removeCutSheetBtn');
+  const cutSheetCaptureInput = document.getElementById('cutSheetCaptureInput');
+  const cutSheetStatus = document.getElementById('cutSheetStatus');
 
   const exportBtn = document.getElementById('exportBtn');
   const importBtn = document.getElementById('importBtn');
@@ -64,6 +69,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let activeObjectUrls = [];
   let pendingMedia = [];
   let pendingConstructionSheet = null;
+  let pendingCutSheet = null;
   let deferredInstallPrompt = null;
 
   function uid() {
@@ -96,12 +102,20 @@ document.addEventListener('DOMContentLoaded', function () {
     return Number.isNaN(d.getTime()) ? escapeHtml(value) : d.toLocaleDateString();
   }
 
+  function getSpecialMediaItem(items, role) {
+    return (items || []).find(function (item) { return item.role === role; }) || null;
+  }
+
   function getRegularMediaItems(items) {
-    return (items || []).filter(function (item) { return item.role !== 'construction-sheet'; });
+    return (items || []).filter(function (item) { return item.role !== 'construction-sheet' && item.role !== 'cut-sheet'; });
   }
 
   function getConstructionSheetItem(items) {
-    return (items || []).find(function (item) { return item.role === 'construction-sheet'; }) || null;
+    return getSpecialMediaItem(items, 'construction-sheet');
+  }
+
+  function getCutSheetItem(items) {
+    return getSpecialMediaItem(items, 'cut-sheet');
   }
 
   function formatLinerValue(value, unit) {
@@ -138,22 +152,36 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  async function openBlobInViewer(blob, type, description) {
+  async function openBlobInViewer(blob, type, description, options) {
     const dataUrl = await blobToDataUrl(blob);
     const tempKey = 'temp-media-' + uid();
+    const viewerOptions = options || {};
     try {
-      sessionStorage.setItem(tempKey, JSON.stringify({ dataUrl: dataUrl, type: type || 'application/octet-stream', description: description || '' }));
+      sessionStorage.setItem(tempKey, JSON.stringify({
+        dataUrl: dataUrl,
+        type: type || 'application/octet-stream',
+        description: description || '',
+        landscape: Boolean(viewerOptions.landscape),
+        title: viewerOptions.title || ''
+      }));
     } catch (err) {
       console.error(err);
       setStatus('Could not open this media preview.', 'error');
       return;
     }
-    window.open('./media-viewer.html?tempKey=' + encodeURIComponent(tempKey), '_blank');
+    const params = new URLSearchParams({ tempKey: tempKey });
+    if (viewerOptions.landscape) params.set('landscape', '1');
+    if (viewerOptions.title) params.set('title', viewerOptions.title);
+    window.open('./media-viewer.html?' + params.toString(), '_blank');
   }
 
-  function openSavedMediaViewer(mediaId) {
+  function openSavedMediaViewer(mediaId, options) {
     if (!mediaId) return;
-    window.open('./media-viewer.html?mediaId=' + encodeURIComponent(mediaId), '_blank');
+    const viewerOptions = options || {};
+    const params = new URLSearchParams({ mediaId: mediaId });
+    if (viewerOptions.landscape) params.set('landscape', '1');
+    if (viewerOptions.title) params.set('title', viewerOptions.title);
+    window.open('./media-viewer.html?' + params.toString(), '_blank');
   }
 
   async function openPendingMediaViewer(targetId) {
@@ -164,7 +192,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
   async function openPendingConstructionSheetViewer() {
     if (!pendingConstructionSheet) return;
-    await openBlobInViewer(pendingConstructionSheet.file, pendingConstructionSheet.file.type, pendingConstructionSheet.description || 'Construction sheet');
+    await openBlobInViewer(pendingConstructionSheet.file, pendingConstructionSheet.file.type, pendingConstructionSheet.description || 'Construction sheet', { landscape: true, title: 'Construction Sheet' });
+  }
+
+  async function openPendingCutSheetViewer() {
+    if (!pendingCutSheet) return;
+    await openBlobInViewer(pendingCutSheet.file, pendingCutSheet.file.type, pendingCutSheet.description || 'Cut sheet', { landscape: true, title: 'Cut Sheet' });
   }
 
   function getEntries() {
@@ -314,24 +347,40 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  async function deleteConstructionSheetForLog(logId) {
-    if (!logId) return;
+  async function deleteSpecialMediaForLog(logId, role) {
+    if (!logId || !role) return;
     const items = await getMediaForLog(logId);
-    const constructionItems = items.filter(function (item) { return item.role === 'construction-sheet'; });
-    if (!constructionItems.length) return;
+    const specialItems = items.filter(function (item) { return item.role === role; });
+    if (!specialItems.length) return;
     const db = await openDb();
     return new Promise(function (resolve, reject) {
       const tx = db.transaction(MEDIA_STORE, 'readwrite');
       const store = tx.objectStore(MEDIA_STORE);
-      constructionItems.forEach(function (item) { store.delete(item.id); });
+      specialItems.forEach(function (item) { store.delete(item.id); });
       tx.oncomplete = function () { resolve(); };
       tx.onerror = function () { reject(tx.error); };
       tx.onabort = function () { reject(tx.error); };
     });
   }
 
+  async function deleteConstructionSheetForLog(logId) {
+    return deleteSpecialMediaForLog(logId, 'construction-sheet');
+  }
+
+  async function deleteCutSheetForLog(logId) {
+    return deleteSpecialMediaForLog(logId, 'cut-sheet');
+  }
+
+  async function getSpecialMediaForLog(logId, role) {
+    return getSpecialMediaItem(await getMediaForLog(logId), role);
+  }
+
   async function getConstructionSheetForLog(logId) {
-    return getConstructionSheetItem(await getMediaForLog(logId));
+    return getSpecialMediaForLog(logId, 'construction-sheet');
+  }
+
+  async function getCutSheetForLog(logId) {
+    return getSpecialMediaForLog(logId, 'cut-sheet');
   }
 
   async function getMediaRecordById(mediaId) {
@@ -388,6 +437,10 @@ document.addEventListener('DOMContentLoaded', function () {
     constructionSheetCaptureInput.value = '';
   }
 
+  function clearPendingCutSheetInput() {
+    cutSheetCaptureInput.value = '';
+  }
+
   async function refreshConstructionSheetUi() {
     let existingSheet = null;
     if (!pendingConstructionSheet && editingIdInput.value) {
@@ -400,27 +453,63 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (pendingConstructionSheet) {
       constructionSheetStatus.textContent = 'New construction sheet photo ready to save with this log.';
-      viewConstructionSheetBtn.hidden = false;
+      topOpenConstructionSheetBtn.hidden = false;
       removeConstructionSheetBtn.hidden = false;
       return;
     }
 
     if (existingSheet) {
       constructionSheetStatus.textContent = 'Construction sheet photo attached to this log.';
-      viewConstructionSheetBtn.hidden = false;
+      topOpenConstructionSheetBtn.hidden = false;
       removeConstructionSheetBtn.hidden = false;
       return;
     }
 
     constructionSheetStatus.textContent = 'No construction sheet attached.';
-    viewConstructionSheetBtn.hidden = true;
+    topOpenConstructionSheetBtn.hidden = true;
     removeConstructionSheetBtn.hidden = true;
+  }
+
+  async function refreshCutSheetUi() {
+    let existingSheet = null;
+    if (!pendingCutSheet && editingIdInput.value) {
+      try {
+        existingSheet = await getCutSheetForLog(editingIdInput.value);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    if (pendingCutSheet) {
+      cutSheetStatus.textContent = 'New cut sheet photo ready to save with this log.';
+      viewCutSheetBtn.hidden = false;
+      removeCutSheetBtn.hidden = false;
+      return;
+    }
+
+    if (existingSheet) {
+      cutSheetStatus.textContent = 'Cut sheet photo attached to this log.';
+      viewCutSheetBtn.hidden = false;
+      removeCutSheetBtn.hidden = false;
+      return;
+    }
+
+    cutSheetStatus.textContent = 'No cut sheet attached.';
+    viewCutSheetBtn.hidden = true;
+    removeCutSheetBtn.hidden = true;
   }
 
   function clearPendingConstructionSheet() {
     pendingConstructionSheet = null;
     clearPendingConstructionSheetInput();
     refreshConstructionSheetUi();
+    refreshCutSheetUi();
+  }
+
+  function clearPendingCutSheet() {
+    pendingCutSheet = null;
+    clearPendingCutSheetInput();
+    refreshCutSheetUi();
   }
 
   function clearPendingMedia() {
@@ -539,6 +628,7 @@ document.addEventListener('DOMContentLoaded', function () {
     netPayloadInput.value = '';
     clearPendingMedia();
     clearPendingConstructionSheet();
+    clearPendingCutSheet();
     cancelEditBtn.hidden = true;
     saveBtn.textContent = 'Save Final Log';
     saveDraftBtn.textContent = 'Save Draft';
@@ -599,7 +689,8 @@ document.addEventListener('DOMContentLoaded', function () {
       entry.departureDate ||
       entry.notes ||
       pendingMedia.length ||
-      pendingConstructionSheet
+      pendingConstructionSheet ||
+      pendingCutSheet
     );
   }
 
@@ -696,6 +787,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const html = await Promise.all(entries.map(async function (entry) {
       const allMediaItems = await getMediaForLog(entry.id);
       const constructionSheet = getConstructionSheetItem(allMediaItems);
+      const cutSheet = getCutSheetItem(allMediaItems);
       const mediaItems = getRegularMediaItems(allMediaItems);
       const axleSummary = entry.axleWeights && entry.axleWeights.length
         ? entry.axleWeights.map(function (weight, index) {
@@ -729,6 +821,10 @@ document.addEventListener('DOMContentLoaded', function () {
         ? '<div class="entry-meta"><strong>Construction sheet:</strong><button type="button" class="secondary small-btn inline-mini-btn open-construction-sheet" data-media-id="' + escapeHtml(constructionSheet.id) + '">Open Sheet</button></div>'
         : '';
 
+      const cutSheetHtml = cutSheet
+        ? '<div class="entry-meta"><strong>Cut sheet:</strong><button type="button" class="secondary small-btn inline-mini-btn open-cut-sheet" data-media-id="' + escapeHtml(cutSheet.id) + '">Open Cut Sheet</button></div>'
+        : '';
+
       const statusClass = entry.status === 'draft' ? 'draft' : 'final';
       const statusLabel = entry.status === 'draft' ? 'Draft' : 'Final';
 
@@ -749,6 +845,7 @@ document.addEventListener('DOMContentLoaded', function () {
           '<div class="entry-meta">Departure: ' + formatDateOnly(entry.departureDate) + ' • Created: ' + formatDateTime(entry.createdAt) + '</div>' +
           (entry.notes ? '<div class="entry-notes"><strong>Notes:</strong> ' + escapeHtml(entry.notes) + '</div>' : '') +
           constructionHtml +
+          cutSheetHtml +
           mediaHtml +
           '<div class="entry-actions">' +
             '<button type="button" class="secondary edit-entry" data-id="' + escapeHtml(entry.id) + '">Edit</button>' +
@@ -786,8 +883,10 @@ document.addEventListener('DOMContentLoaded', function () {
     notesInput.value = entry.notes || '';
     clearPendingMedia();
     clearPendingConstructionSheet();
+    clearPendingCutSheet();
     selectedMediaInfo.textContent = 'Existing attached media will stay unless you delete it. Any new files you add now will be attached when you save, and saved media notes can be edited below.';
     refreshConstructionSheetUi();
+    refreshCutSheetUi();
     cancelEditBtn.hidden = false;
     saveBtn.textContent = entry.status === 'draft' ? 'Save Final Log' : 'Update Final Log';
     saveDraftBtn.textContent = 'Update Draft';
@@ -807,6 +906,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (itemsToAttach.some(function (item) { return item.role === 'construction-sheet'; })) {
       await deleteConstructionSheetForLog(entry.id);
+    }
+
+    if (itemsToAttach.some(function (item) { return item.role === 'cut-sheet'; })) {
+      await deleteCutSheetForLog(entry.id);
     }
 
     if (itemsToAttach.length) {
@@ -998,6 +1101,7 @@ document.addEventListener('DOMContentLoaded', function () {
   async function printEntry(entry) {
     const allMediaItems = await getMediaForLog(entry.id);
     const constructionSheet = getConstructionSheetItem(allMediaItems);
+    const cutSheet = getCutSheetItem(allMediaItems);
     const mediaItems = getRegularMediaItems(allMediaItems);
     const axleSummary = entry.axleWeights && entry.axleWeights.length
       ? entry.axleWeights.map(function (weight, index) {
@@ -1007,6 +1111,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const mediaHtml = await buildPrintableMediaHtml(mediaItems);
     const constructionSheetHtml = constructionSheet ? '<div class="section no-break"><strong>Construction Sheet</strong><br>Attached photo stored with this log.</div>' : '';
+    const cutSheetHtml = cutSheet ? '<div class="section no-break"><strong>Cut Sheet</strong><br>Attached photo stored with this log.</div>' : '';
     const statusLabel = entry.status === 'draft' ? 'Draft' : 'Final';
     const printableHtml = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trailer Log ' + escapeHtml(entry.tubeNumber || '') + '</title>' +
       '<style>' +
@@ -1034,6 +1139,7 @@ document.addEventListener('DOMContentLoaded', function () {
       '<div class="section no-break"><strong>Axle Weights</strong><br>' + escapeHtml(axleSummary) + '</div>' +
       '<div class="section no-break"><strong>Vacuum Heights</strong><br>Before: ' + escapeHtml(entry.heightBeforeVacuum ?? '—') + ' ft • After: ' + escapeHtml(entry.heightAfterVacuum ?? '—') + ' ft</div>' +
       constructionSheetHtml +
+      cutSheetHtml +
       (entry.notes ? '<div class="notes no-break"><strong>Notes</strong><br>' + escapeHtml(entry.notes).replace(/\n/g, '<br>') + '</div>' : '') +
       '<h2>Attached Media</h2>' + mediaHtml +
       '</body></html>';
@@ -1182,6 +1288,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const pendingToAttach = pendingMedia.slice();
     if (pendingConstructionSheet) pendingToAttach.push(pendingConstructionSheet);
+    if (pendingCutSheet) pendingToAttach.push(pendingCutSheet);
     const wasEditing = Boolean(editingIdInput.value);
 
     try {
@@ -1220,7 +1327,7 @@ document.addEventListener('DOMContentLoaded', function () {
     constructionSheetCaptureInput.click();
   });
 
-  viewConstructionSheetBtn.addEventListener('click', async function () {
+  topOpenConstructionSheetBtn.addEventListener('click', async function () {
     if (pendingConstructionSheet) {
       await openPendingConstructionSheetViewer();
       return;
@@ -1232,7 +1339,26 @@ document.addEventListener('DOMContentLoaded', function () {
       await refreshConstructionSheetUi();
       return;
     }
-    openSavedMediaViewer(existingSheet.id);
+    openSavedMediaViewer(existingSheet.id, { landscape: true, title: 'Construction Sheet' });
+  });
+
+  takeCutSheetBtn.addEventListener('click', function () {
+    cutSheetCaptureInput.click();
+  });
+
+  viewCutSheetBtn.addEventListener('click', async function () {
+    if (pendingCutSheet) {
+      await openPendingCutSheetViewer();
+      return;
+    }
+    if (!editingIdInput.value) return;
+    const existingSheet = await getCutSheetForLog(editingIdInput.value);
+    if (!existingSheet) {
+      setStatus('No cut sheet is attached to this log yet.', 'warning');
+      await refreshCutSheetUi();
+      return;
+    }
+    openSavedMediaViewer(existingSheet.id, { landscape: true, title: 'Cut Sheet' });
   });
 
   removeConstructionSheetBtn.addEventListener('click', async function () {
@@ -1265,6 +1391,36 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
+  removeCutSheetBtn.addEventListener('click', async function () {
+    if (pendingCutSheet) {
+      const ok = confirm('Remove the new cut sheet photo before saving?');
+      if (!ok) return;
+      clearPendingCutSheet();
+      setStatus('Pending cut sheet removed.', 'warning');
+      return;
+    }
+
+    if (!editingIdInput.value) return;
+    const existingSheet = await getCutSheetForLog(editingIdInput.value);
+    if (!existingSheet) {
+      await refreshCutSheetUi();
+      return;
+    }
+
+    const ok = confirm('Delete the saved cut sheet photo from this log?');
+    if (!ok) return;
+    try {
+      await deleteCutSheetForLog(editingIdInput.value);
+      await syncMediaCountForEntry(editingIdInput.value);
+      await refreshCutSheetUi();
+      await loadEntries();
+      setStatus('Cut sheet removed from this log.', 'success');
+    } catch (err) {
+      console.error(err);
+      setStatus('Could not remove the cut sheet.', 'error');
+    }
+  });
+
   clearPendingMediaBtn.addEventListener('click', function () {
     clearPendingMedia();
     setStatus('Pending media cleared.', 'warning');
@@ -1294,6 +1450,20 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     refreshConstructionSheetUi();
     setStatus('Construction sheet photo added. Save the log to attach it.', 'success');
+  });
+
+  cutSheetCaptureInput.addEventListener('change', function () {
+    const file = cutSheetCaptureInput.files && cutSheetCaptureInput.files[0];
+    if (!file) return;
+    pendingCutSheet = {
+      localId: uid(),
+      file: file,
+      source: 'cut sheet camera',
+      description: 'Cut sheet',
+      role: 'cut-sheet'
+    };
+    refreshCutSheetUi();
+    setStatus('Cut sheet photo added. Save the log to attach it.', 'success');
   });
 
   pendingMediaPreview.addEventListener('input', function (event) {
@@ -1376,7 +1546,14 @@ document.addEventListener('DOMContentLoaded', function () {
     const openConstructionButton = event.target.closest('.open-construction-sheet');
     if (openConstructionButton) {
       const mediaId = openConstructionButton.getAttribute('data-media-id');
-      if (mediaId) openSavedMediaViewer(mediaId);
+      if (mediaId) openSavedMediaViewer(mediaId, { landscape: true, title: 'Construction Sheet' });
+      return;
+    }
+
+    const openCutSheetButton = event.target.closest('.open-cut-sheet');
+    if (openCutSheetButton) {
+      const mediaId = openCutSheetButton.getAttribute('data-media-id');
+      if (mediaId) openSavedMediaViewer(mediaId, { landscape: true, title: 'Cut Sheet' });
       return;
     }
 

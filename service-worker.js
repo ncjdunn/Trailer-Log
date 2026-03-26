@@ -1,4 +1,4 @@
-const CACHE_NAME = 'trailer-weight-logger-v19';
+const CACHE_NAME = 'trailer-weight-logger-v20';
 const FILES_TO_CACHE = [
   './',
   './index.html',
