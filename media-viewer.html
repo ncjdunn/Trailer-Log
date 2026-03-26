@@ -59,6 +59,10 @@
         return new URLSearchParams(window.location.search).get('mediaId');
       }
 
+      function getTempKey() {
+        return new URLSearchParams(window.location.search).get('tempKey');
+      }
+
       function openDb() {
         return new Promise(function (resolve, reject) {
           const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -79,6 +83,41 @@
       }
 
       async function load() {
+        const tempKey = getTempKey();
+        if (tempKey) {
+          try {
+            const raw = sessionStorage.getItem(tempKey);
+            if (!raw) {
+              viewer.innerHTML = '<div class="empty">This temporary media preview is no longer available.</div>';
+              return;
+            }
+            const item = JSON.parse(raw);
+            let mediaNode;
+            if ((item.type || '').startsWith('video/')) {
+              mediaNode = document.createElement('video');
+              mediaNode.src = item.dataUrl;
+              mediaNode.controls = true;
+              mediaNode.autoplay = true;
+              mediaNode.playsInline = true;
+            } else {
+              mediaNode = document.createElement('img');
+              mediaNode.src = item.dataUrl;
+              mediaNode.alt = item.description || 'Media preview';
+            }
+            viewer.innerHTML = '';
+            viewer.appendChild(mediaNode);
+            if (item.description) {
+              noteEl.textContent = item.description;
+              noteEl.hidden = false;
+            }
+            return;
+          } catch (err) {
+            console.error(err);
+            viewer.innerHTML = '<div class="empty">Could not load this temporary media preview.</div>';
+            return;
+          }
+        }
+
         const mediaId = getMediaId();
         if (!mediaId) {
           viewer.innerHTML = '<div class="empty">No media selected.</div>';

@@ -18,6 +18,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const destinationInput = document.getElementById('destination');
   const departureDateInput = document.getElementById('departureDate');
   const notesInput = document.getElementById('notes');
+  const linerLengthInput = document.getElementById('linerLength');
+  const linerWidthInput = document.getElementById('linerWidth');
+  const linerGaugeInput = document.getElementById('linerGauge');
 
   const browseMediaBtn = document.getElementById('browseMediaBtn');
   const takePhotoBtn = document.getElementById('takePhotoBtn');
@@ -28,6 +31,11 @@ document.addEventListener('DOMContentLoaded', function () {
   const videoCaptureInput = document.getElementById('videoCaptureInput');
   const selectedMediaInfo = document.getElementById('selectedMediaInfo');
   const pendingMediaPreview = document.getElementById('pendingMediaPreview');
+  const takeConstructionSheetBtn = document.getElementById('takeConstructionSheetBtn');
+  const viewConstructionSheetBtn = document.getElementById('viewConstructionSheetBtn');
+  const removeConstructionSheetBtn = document.getElementById('removeConstructionSheetBtn');
+  const constructionSheetCaptureInput = document.getElementById('constructionSheetCaptureInput');
+  const constructionSheetStatus = document.getElementById('constructionSheetStatus');
 
   const exportBtn = document.getElementById('exportBtn');
   const importBtn = document.getElementById('importBtn');
@@ -55,6 +63,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let dbPromise = null;
   let activeObjectUrls = [];
   let pendingMedia = [];
+  let pendingConstructionSheet = null;
   let deferredInstallPrompt = null;
 
   function uid() {
@@ -87,6 +96,19 @@ document.addEventListener('DOMContentLoaded', function () {
     return Number.isNaN(d.getTime()) ? escapeHtml(value) : d.toLocaleDateString();
   }
 
+  function getRegularMediaItems(items) {
+    return (items || []).filter(function (item) { return item.role !== 'construction-sheet'; });
+  }
+
+  function getConstructionSheetItem(items) {
+    return (items || []).find(function (item) { return item.role === 'construction-sheet'; }) || null;
+  }
+
+  function formatLinerValue(value, unit) {
+    if (value == null || value === '') return '—';
+    return escapeHtml(value) + (unit ? ' ' + unit : '');
+  }
+
   function setStatus(message, type) {
     statusMessage.textContent = message || '';
     statusMessage.className = 'status' + (type ? ' ' + type : '');
@@ -114,6 +136,35 @@ document.addEventListener('DOMContentLoaded', function () {
     } else {
       if (installMessage) installMessage.textContent = 'Open the hosted site directly in Chrome or Edge. If this button does not prompt, use the browser menu to install.';
     }
+  }
+
+  async function openBlobInViewer(blob, type, description) {
+    const dataUrl = await blobToDataUrl(blob);
+    const tempKey = 'temp-media-' + uid();
+    try {
+      sessionStorage.setItem(tempKey, JSON.stringify({ dataUrl: dataUrl, type: type || 'application/octet-stream', description: description || '' }));
+    } catch (err) {
+      console.error(err);
+      setStatus('Could not open this media preview.', 'error');
+      return;
+    }
+    window.open('./media-viewer.html?tempKey=' + encodeURIComponent(tempKey), '_blank');
+  }
+
+  function openSavedMediaViewer(mediaId) {
+    if (!mediaId) return;
+    window.open('./media-viewer.html?mediaId=' + encodeURIComponent(mediaId), '_blank');
+  }
+
+  async function openPendingMediaViewer(targetId) {
+    const item = pendingMedia.find(function (media) { return media.localId === targetId; });
+    if (!item) return;
+    await openBlobInViewer(item.file, item.file.type, item.description || '');
+  }
+
+  async function openPendingConstructionSheetViewer() {
+    if (!pendingConstructionSheet) return;
+    await openBlobInViewer(pendingConstructionSheet.file, pendingConstructionSheet.file.type, pendingConstructionSheet.description || 'Construction sheet');
   }
 
   function getEntries() {
@@ -224,6 +275,7 @@ document.addEventListener('DOMContentLoaded', function () {
         size: item.file.size || 0,
         description: item.description || '',
         source: item.source || 'files',
+        role: item.role || 'general',
         createdAt: new Date().toISOString(),
         blob: item.file
       };
@@ -260,6 +312,26 @@ document.addEventListener('DOMContentLoaded', function () {
       request.onsuccess = function () { resolve(); };
       request.onerror = function () { reject(request.error); };
     });
+  }
+
+  async function deleteConstructionSheetForLog(logId) {
+    if (!logId) return;
+    const items = await getMediaForLog(logId);
+    const constructionItems = items.filter(function (item) { return item.role === 'construction-sheet'; });
+    if (!constructionItems.length) return;
+    const db = await openDb();
+    return new Promise(function (resolve, reject) {
+      const tx = db.transaction(MEDIA_STORE, 'readwrite');
+      const store = tx.objectStore(MEDIA_STORE);
+      constructionItems.forEach(function (item) { store.delete(item.id); });
+      tx.oncomplete = function () { resolve(); };
+      tx.onerror = function () { reject(tx.error); };
+      tx.onabort = function () { reject(tx.error); };
+    });
+  }
+
+  async function getConstructionSheetForLog(logId) {
+    return getConstructionSheetItem(await getMediaForLog(logId));
   }
 
   async function getMediaRecordById(mediaId) {
@@ -310,6 +382,45 @@ document.addEventListener('DOMContentLoaded', function () {
     mediaFilesInput.value = '';
     photoCaptureInput.value = '';
     videoCaptureInput.value = '';
+  }
+
+  function clearPendingConstructionSheetInput() {
+    constructionSheetCaptureInput.value = '';
+  }
+
+  async function refreshConstructionSheetUi() {
+    let existingSheet = null;
+    if (!pendingConstructionSheet && editingIdInput.value) {
+      try {
+        existingSheet = await getConstructionSheetForLog(editingIdInput.value);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    if (pendingConstructionSheet) {
+      constructionSheetStatus.textContent = 'New construction sheet photo ready to save with this log.';
+      viewConstructionSheetBtn.hidden = false;
+      removeConstructionSheetBtn.hidden = false;
+      return;
+    }
+
+    if (existingSheet) {
+      constructionSheetStatus.textContent = 'Construction sheet photo attached to this log.';
+      viewConstructionSheetBtn.hidden = false;
+      removeConstructionSheetBtn.hidden = false;
+      return;
+    }
+
+    constructionSheetStatus.textContent = 'No construction sheet attached.';
+    viewConstructionSheetBtn.hidden = true;
+    removeConstructionSheetBtn.hidden = true;
+  }
+
+  function clearPendingConstructionSheet() {
+    pendingConstructionSheet = null;
+    clearPendingConstructionSheetInput();
+    refreshConstructionSheetUi();
   }
 
   function clearPendingMedia() {
@@ -379,7 +490,8 @@ document.addEventListener('DOMContentLoaded', function () {
         localId: uid(),
         file: file,
         source: source || 'files',
-        description: ''
+        description: '',
+        role: 'general'
       });
     });
 
@@ -426,6 +538,7 @@ document.addEventListener('DOMContentLoaded', function () {
     totalWeightInput.value = '';
     netPayloadInput.value = '';
     clearPendingMedia();
+    clearPendingConstructionSheet();
     cancelEditBtn.hidden = true;
     saveBtn.textContent = 'Save Final Log';
     saveDraftBtn.textContent = 'Save Draft';
@@ -446,6 +559,9 @@ document.addEventListener('DOMContentLoaded', function () {
       status: status,
       tubeNumber: tubeNumberInput.value.trim(),
       destination: destinationInput.value.trim(),
+      linerLength: linerLengthInput.value === '' ? null : Number(linerLengthInput.value),
+      linerWidth: linerWidthInput.value === '' ? null : Number(linerWidthInput.value),
+      linerGauge: linerGaugeInput.value === '' ? null : Number(linerGaugeInput.value),
       trailerType: trailerTypeInput.value.trim(),
       trailerLength: trailerLengthInput.value === '' ? null : Number(trailerLengthInput.value),
       trailerNumber: trailerNumberInput.value.trim(),
@@ -468,6 +584,9 @@ document.addEventListener('DOMContentLoaded', function () {
     return Boolean(
       entry.tubeNumber ||
       entry.destination ||
+      entry.linerLength != null ||
+      entry.linerWidth != null ||
+      entry.linerGauge != null ||
       entry.trailerType ||
       entry.trailerLength != null ||
       entry.trailerNumber ||
@@ -479,7 +598,8 @@ document.addEventListener('DOMContentLoaded', function () {
       entry.heightAfterVacuum != null ||
       entry.departureDate ||
       entry.notes ||
-      pendingMedia.length
+      pendingMedia.length ||
+      pendingConstructionSheet
     );
   }
 
@@ -529,6 +649,9 @@ document.addEventListener('DOMContentLoaded', function () {
           entry.status,
           entry.tubeNumber,
           entry.destination,
+          entry.linerLength,
+          entry.linerWidth,
+          entry.linerGauge,
           entry.trailerType,
           entry.trailerNumber,
           entry.notes
@@ -571,7 +694,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     const html = await Promise.all(entries.map(async function (entry) {
-      const mediaItems = await getMediaForLog(entry.id);
+      const allMediaItems = await getMediaForLog(entry.id);
+      const constructionSheet = getConstructionSheetItem(allMediaItems);
+      const mediaItems = getRegularMediaItems(allMediaItems);
       const axleSummary = entry.axleWeights && entry.axleWeights.length
         ? entry.axleWeights.map(function (weight, index) {
             return 'A' + (index + 1) + ': ' + (weight != null ? formatNumber(weight) : '-') + ' lbs';
@@ -600,6 +725,10 @@ document.addEventListener('DOMContentLoaded', function () {
           }).join('') + '</div>'
         : '';
 
+      const constructionHtml = constructionSheet
+        ? '<div class="entry-meta"><strong>Construction sheet:</strong><button type="button" class="secondary small-btn inline-mini-btn open-construction-sheet" data-media-id="' + escapeHtml(constructionSheet.id) + '">Open Sheet</button></div>'
+        : '';
+
       const statusClass = entry.status === 'draft' ? 'draft' : 'final';
       const statusLabel = entry.status === 'draft' ? 'Draft' : 'Final';
 
@@ -609,6 +738,7 @@ document.addEventListener('DOMContentLoaded', function () {
             '<div>' +
               '<div class="status-chip ' + statusClass + '">' + statusLabel + '</div>' +
               '<div class="entry-title">Tube ' + escapeHtml(entry.tubeNumber || '—') + ' • ' + escapeHtml(entry.destination || 'No destination yet') + '</div>' +
+              '<div class="entry-meta">Liner: Length ' + formatLinerValue(entry.linerLength, 'ft') + ' • Width ' + formatLinerValue(entry.linerWidth, 'in') + ' • Gauge ' + formatLinerValue(entry.linerGauge, 'mm') + '</div>' +
               '<div class="entry-meta">Trailer: ' + escapeHtml(entry.trailerType || '-') + ' • Length: ' + escapeHtml(entry.trailerLength ?? '-') + ' ft • Trailer #: ' + escapeHtml(entry.trailerNumber || '-') + '</div>' +
             '</div>' +
             '<div class="entry-date">Updated ' + formatDateTime(entry.updatedAt || entry.createdAt) + '</div>' +
@@ -618,6 +748,7 @@ document.addEventListener('DOMContentLoaded', function () {
           '<div class="entry-meta">Height before: ' + escapeHtml(entry.heightBeforeVacuum ?? '-') + ' ft • After: ' + escapeHtml(entry.heightAfterVacuum ?? '-') + ' ft</div>' +
           '<div class="entry-meta">Departure: ' + formatDateOnly(entry.departureDate) + ' • Created: ' + formatDateTime(entry.createdAt) + '</div>' +
           (entry.notes ? '<div class="entry-notes"><strong>Notes:</strong> ' + escapeHtml(entry.notes) + '</div>' : '') +
+          constructionHtml +
           mediaHtml +
           '<div class="entry-actions">' +
             '<button type="button" class="secondary edit-entry" data-id="' + escapeHtml(entry.id) + '">Edit</button>' +
@@ -637,6 +768,9 @@ document.addEventListener('DOMContentLoaded', function () {
     editingIdInput.value = entry.id;
     tubeNumberInput.value = entry.tubeNumber || '';
     destinationInput.value = entry.destination || '';
+    linerLengthInput.value = entry.linerLength ?? '';
+    linerWidthInput.value = entry.linerWidth ?? '';
+    linerGaugeInput.value = entry.linerGauge ?? '';
     trailerTypeInput.value = entry.trailerType || '';
     trailerLengthInput.value = entry.trailerLength ?? '';
     trailerNumberInput.value = entry.trailerNumber || '';
@@ -651,7 +785,9 @@ document.addEventListener('DOMContentLoaded', function () {
     departureDateInput.value = entry.departureDate || '';
     notesInput.value = entry.notes || '';
     clearPendingMedia();
+    clearPendingConstructionSheet();
     selectedMediaInfo.textContent = 'Existing attached media will stay unless you delete it. Any new files you add now will be attached when you save, and saved media notes can be edited below.';
+    refreshConstructionSheetUi();
     cancelEditBtn.hidden = false;
     saveBtn.textContent = entry.status === 'draft' ? 'Save Final Log' : 'Update Final Log';
     saveDraftBtn.textContent = 'Update Draft';
@@ -667,6 +803,10 @@ document.addEventListener('DOMContentLoaded', function () {
       entries[existingIndex] = entry;
     } else {
       entries.unshift(entry);
+    }
+
+    if (itemsToAttach.some(function (item) { return item.role === 'construction-sheet'; })) {
+      await deleteConstructionSheetForLog(entry.id);
     }
 
     if (itemsToAttach.length) {
@@ -738,6 +878,7 @@ document.addEventListener('DOMContentLoaded', function () {
         size: item.size,
         description: item.description,
         source: item.source || 'files',
+        role: item.role || 'general',
         createdAt: item.createdAt,
         dataUrl: await blobToDataUrl(item.blob)
       };
@@ -855,7 +996,9 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   async function printEntry(entry) {
-    const mediaItems = await getMediaForLog(entry.id);
+    const allMediaItems = await getMediaForLog(entry.id);
+    const constructionSheet = getConstructionSheetItem(allMediaItems);
+    const mediaItems = getRegularMediaItems(allMediaItems);
     const axleSummary = entry.axleWeights && entry.axleWeights.length
       ? entry.axleWeights.map(function (weight, index) {
           return 'Axle ' + (index + 1) + ': ' + (weight != null ? formatNumber(weight) : '-') + ' lbs';
@@ -863,6 +1006,7 @@ document.addEventListener('DOMContentLoaded', function () {
       : '—';
 
     const mediaHtml = await buildPrintableMediaHtml(mediaItems);
+    const constructionSheetHtml = constructionSheet ? '<div class="section no-break"><strong>Construction Sheet</strong><br>Attached photo stored with this log.</div>' : '';
     const statusLabel = entry.status === 'draft' ? 'Draft' : 'Final';
     const printableHtml = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trailer Log ' + escapeHtml(entry.tubeNumber || '') + '</title>' +
       '<style>' +
@@ -875,6 +1019,9 @@ document.addEventListener('DOMContentLoaded', function () {
       '<div class="section no-break"><div class="summary-grid">' +
       '<div><strong>Tube Number</strong><br>' + escapeHtml(entry.tubeNumber || '—') + '</div>' +
       '<div><strong>Customer / Destination</strong><br>' + escapeHtml(entry.destination || '—') + '</div>' +
+      '<div><strong>Liner Length</strong><br>' + escapeHtml(entry.linerLength ?? '—') + ' ft</div>' +
+      '<div><strong>Liner Width</strong><br>' + escapeHtml(entry.linerWidth ?? '—') + ' in</div>' +
+      '<div><strong>Liner Gauge</strong><br>' + escapeHtml(entry.linerGauge ?? '—') + ' mm</div>' +
       '<div><strong>Trailer Type</strong><br>' + escapeHtml(entry.trailerType || '—') + '</div>' +
       '<div><strong>Trailer Length</strong><br>' + escapeHtml(entry.trailerLength ?? '—') + ' ft</div>' +
       '<div><strong>Trailer Number</strong><br>' + escapeHtml(entry.trailerNumber || '—') + '</div>' +
@@ -886,6 +1033,7 @@ document.addEventListener('DOMContentLoaded', function () {
       '<h2>Weights</h2><table class="no-break"><tr><th>Truck</th><th>Empty Trailer</th><th>Truck + Trailer</th><th>Net Payload</th></tr><tr><td>' + escapeHtml(formatNumber(entry.truckWeight)) + ' lbs</td><td>' + escapeHtml(formatNumber(entry.emptyTrailerWeight)) + ' lbs</td><td>' + escapeHtml(formatNumber(entry.truckAndTrailerWeight)) + ' lbs</td><td>' + escapeHtml(formatNumber(entry.netPayload)) + ' lbs</td></tr></table>' +
       '<div class="section no-break"><strong>Axle Weights</strong><br>' + escapeHtml(axleSummary) + '</div>' +
       '<div class="section no-break"><strong>Vacuum Heights</strong><br>Before: ' + escapeHtml(entry.heightBeforeVacuum ?? '—') + ' ft • After: ' + escapeHtml(entry.heightAfterVacuum ?? '—') + ' ft</div>' +
+      constructionSheetHtml +
       (entry.notes ? '<div class="notes no-break"><strong>Notes</strong><br>' + escapeHtml(entry.notes).replace(/\n/g, '<br>') + '</div>' : '') +
       '<h2>Attached Media</h2>' + mediaHtml +
       '</body></html>';
@@ -945,6 +1093,7 @@ document.addEventListener('DOMContentLoaded', function () {
         size: item.size,
         description: item.description,
         source: item.source || 'files',
+        role: item.role || 'general',
         createdAt: item.createdAt,
         dataUrl: await blobToDataUrl(item.blob)
       };
@@ -1008,6 +1157,7 @@ document.addEventListener('DOMContentLoaded', function () {
             size: item.size || 0,
             description: item.description || '',
             source: item.source || 'imported backup',
+            role: item.role || 'general',
             createdAt: item.createdAt || new Date().toISOString(),
             blob: dataUrlToBlob(item.dataUrl)
           };
@@ -1031,6 +1181,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     const pendingToAttach = pendingMedia.slice();
+    if (pendingConstructionSheet) pendingToAttach.push(pendingConstructionSheet);
     const wasEditing = Boolean(editingIdInput.value);
 
     try {
@@ -1065,6 +1216,55 @@ document.addEventListener('DOMContentLoaded', function () {
     videoCaptureInput.click();
   });
 
+  takeConstructionSheetBtn.addEventListener('click', function () {
+    constructionSheetCaptureInput.click();
+  });
+
+  viewConstructionSheetBtn.addEventListener('click', async function () {
+    if (pendingConstructionSheet) {
+      await openPendingConstructionSheetViewer();
+      return;
+    }
+    if (!editingIdInput.value) return;
+    const existingSheet = await getConstructionSheetForLog(editingIdInput.value);
+    if (!existingSheet) {
+      setStatus('No construction sheet is attached to this log yet.', 'warning');
+      await refreshConstructionSheetUi();
+      return;
+    }
+    openSavedMediaViewer(existingSheet.id);
+  });
+
+  removeConstructionSheetBtn.addEventListener('click', async function () {
+    if (pendingConstructionSheet) {
+      const ok = confirm('Remove the new construction sheet photo before saving?');
+      if (!ok) return;
+      clearPendingConstructionSheet();
+      setStatus('Pending construction sheet removed.', 'warning');
+      return;
+    }
+
+    if (!editingIdInput.value) return;
+    const existingSheet = await getConstructionSheetForLog(editingIdInput.value);
+    if (!existingSheet) {
+      await refreshConstructionSheetUi();
+      return;
+    }
+
+    const ok = confirm('Delete the saved construction sheet photo from this log?');
+    if (!ok) return;
+    try {
+      await deleteConstructionSheetForLog(editingIdInput.value);
+      await syncMediaCountForEntry(editingIdInput.value);
+      await refreshConstructionSheetUi();
+      await loadEntries();
+      setStatus('Construction sheet removed from this log.', 'success');
+    } catch (err) {
+      console.error(err);
+      setStatus('Could not remove the construction sheet.', 'error');
+    }
+  });
+
   clearPendingMediaBtn.addEventListener('click', function () {
     clearPendingMedia();
     setStatus('Pending media cleared.', 'warning');
@@ -1080,6 +1280,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
   videoCaptureInput.addEventListener('change', function () {
     addPendingFiles(videoCaptureInput.files, 'camera video');
+  });
+
+  constructionSheetCaptureInput.addEventListener('change', function () {
+    const file = constructionSheetCaptureInput.files && constructionSheetCaptureInput.files[0];
+    if (!file) return;
+    pendingConstructionSheet = {
+      localId: uid(),
+      file: file,
+      source: 'construction sheet camera',
+      description: 'Construction sheet',
+      role: 'construction-sheet'
+    };
+    refreshConstructionSheetUi();
+    setStatus('Construction sheet photo added. Save the log to attach it.', 'success');
   });
 
   pendingMediaPreview.addEventListener('input', function (event) {
@@ -1156,6 +1370,13 @@ document.addEventListener('DOMContentLoaded', function () {
         console.error(err);
         setStatus('Could not update that media note.', 'error');
       }
+      return;
+    }
+
+    const openConstructionButton = event.target.closest('.open-construction-sheet');
+    if (openConstructionButton) {
+      const mediaId = openConstructionButton.getAttribute('data-media-id');
+      if (mediaId) openSavedMediaViewer(mediaId);
       return;
     }
 

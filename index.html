@@ -347,6 +347,11 @@
     .media-desc{font-size:.8rem;color:var(--muted);line-height:1.4}
     .pending-media-actions,.media-card-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
 
+    .liner-section{margin-top:14px}
+    .construction-sheet-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+    .construction-sheet-status{margin-top:8px}
+    .inline-mini-btn{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:8px;padding:6px 10px;font-size:.82rem;border-radius:999px}
+
     .empty-state{
       padding:22px;
       text-align:center;
@@ -371,7 +376,7 @@
       .brand-head{align-items:flex-start}
       .brand-logo{width:54px;height:54px}
       button{width:100%}
-      .entry-actions button,.media-action-row button,.pending-media-actions button{width:auto; flex:1 1 0}
+      .entry-actions button,.media-action-row button,.pending-media-actions button,.construction-sheet-row button{width:auto; flex:1 1 0}
       .floating-save-bar{width:calc(100% - 16px);bottom:calc(8px + env(safe-area-inset-bottom, 0px));padding:8px;gap:8px}
       .floating-save-bar button{width:auto;flex:1 1 0;padding:12px 10px}
     }
@@ -419,6 +424,32 @@
             <label>Customer and Destination
               <input type="text" id="destination" autocomplete="off">
             </label>
+          </div>
+
+          <div class="liner-section">
+            <div class="section-title">Liner Details</div>
+            <div class="grid-3">
+              <label>Liner length (ft)
+                <input type="number" step="any" id="linerLength" inputmode="decimal">
+              </label>
+              <label>Liner width (in)
+                <input type="number" step="any" id="linerWidth" inputmode="decimal">
+              </label>
+              <label>Liner gauge (mm)
+                <input type="number" step="any" id="linerGauge" inputmode="decimal">
+              </label>
+            </div>
+          </div>
+
+          <div class="media-panel">
+            <div class="section-title">Construction Sheet</div>
+            <div class="construction-sheet-row">
+              <button type="button" id="takeConstructionSheetBtn" class="secondary">Take Sheet Photo</button>
+              <button type="button" id="viewConstructionSheetBtn" class="secondary" hidden>Open Sheet</button>
+              <button type="button" id="removeConstructionSheetBtn" class="ghost" hidden>Remove Sheet</button>
+            </div>
+            <input class="hidden-file" type="file" id="constructionSheetCaptureInput" accept="image/*" capture="environment">
+            <div id="constructionSheetStatus" class="hint construction-sheet-status">No construction sheet attached.</div>
           </div>
 
           <div class="grid-3">
