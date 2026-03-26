@@ -33,10 +33,14 @@ document.addEventListener('DOMContentLoaded', function () {
   const pendingMediaPreview = document.getElementById('pendingMediaPreview');
   const attachedMediaSection = document.getElementById('attachedMediaSection');
   const topOpenConstructionSheetBtn = document.getElementById('topOpenConstructionSheetBtn');
+  const topDownloadConstructionSheetBtn = document.getElementById('topDownloadConstructionSheetBtn');
   const takeConstructionSheetBtn = document.getElementById('takeConstructionSheetBtn');
+  const uploadConstructionSnapshotBtn = document.getElementById('uploadConstructionSnapshotBtn');
   const uploadConstructionSheetBtn = document.getElementById('uploadConstructionSheetBtn');
   const removeConstructionSheetBtn = document.getElementById('removeConstructionSheetBtn');
+  const removeConstructionSheetFileBtn = document.getElementById('removeConstructionSheetFileBtn');
   const constructionSheetCaptureInput = document.getElementById('constructionSheetCaptureInput');
+  const constructionSnapshotUploadInput = document.getElementById('constructionSnapshotUploadInput');
   const constructionSheetUploadInput = document.getElementById('constructionSheetUploadInput');
   const constructionSheetStatus = document.getElementById('constructionSheetStatus');
   const takeCutSheetBtn = document.getElementById('takeCutSheetBtn');
@@ -72,6 +76,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let activeObjectUrls = [];
   let pendingMedia = [];
   let pendingConstructionSheet = null;
+  let pendingConstructionSheetFile = null;
   let pendingCutSheet = null;
   let deferredInstallPrompt = null;
 
@@ -110,11 +115,15 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function getRegularMediaItems(items) {
-    return (items || []).filter(function (item) { return item.role !== 'construction-sheet' && item.role !== 'cut-sheet'; });
+    return (items || []).filter(function (item) { return item.role !== 'construction-sheet' && item.role !== 'construction-sheet-file' && item.role !== 'cut-sheet'; });
   }
 
   function getConstructionSheetItem(items) {
     return getSpecialMediaItem(items, 'construction-sheet');
+  }
+
+  function getConstructionSheetFileItem(items) {
+    return getSpecialMediaItem(items, 'construction-sheet-file');
   }
 
   function getCutSheetItem(items) {
@@ -208,36 +217,41 @@ document.addEventListener('DOMContentLoaded', function () {
     window.location.assign('./spreadsheet-viewer.html?' + params.toString());
   }
 
+  async function openConstructionSheetSnapshotItem(item) {
+    if (!item || !item.file) return;
+    await openBlobInViewer(item.file, item.file.type, item.description || 'Construction sheet', { landscape: true, title: 'Construction Sheet' });
+  }
+
+  async function downloadConstructionSheetFileItem(item) {
+    if (!item || !item.file) return;
+    downloadBlobFile(item.file, item.file.name || 'construction-sheet.xlsm');
+  }
+
+  async function downloadSavedConstructionSheetFile(item) {
+    if (!item || !item.blob) return;
+    downloadBlobFile(item.blob, item.name || 'construction-sheet.xlsm');
+  }
+
   async function openConstructionSheetItem(item) {
     if (!item || !item.file) return;
-    if (isPreviewableMedia(item.file.type, item.file.name)) {
-      await openBlobInViewer(item.file, item.file.type, item.description || 'Construction sheet', { landscape: true, title: 'Construction Sheet' });
-      return;
-    }
-    await openSpreadsheetBlobInViewer(item.file, item.description || 'Construction sheet', {
-      title: 'Construction Sheet',
-      fileName: item.file.name || 'construction-sheet.xlsm'
-    });
+    await openConstructionSheetSnapshotItem(item);
   }
 
   async function openSavedConstructionSheetItem(item) {
     if (!item) return;
-    if (isPreviewableMedia(item.type, item.name)) {
-      openSavedMediaViewer(item.id, { landscape: true, title: 'Construction Sheet' });
-      return;
-    }
-    openSavedSpreadsheetViewer(item.id, {
-      title: 'Construction Sheet',
-      fileName: item.name || 'construction-sheet.xlsm'
-    });
+    openSavedMediaViewer(item.id, { landscape: true, title: 'Construction Sheet' });
   }
 
-  function describeConstructionSheetItem(item) {
-    if (!item) return 'No construction sheet attached.';
+  function describeConstructionSheetSnapshotItem(item) {
+    if (!item) return 'No construction sheet snapshot attached.';
     const isPending = Boolean(item.file);
-    const isSpreadsheet = isSpreadsheetType(isPending ? item.file.type : item.type, isPending ? item.file.name : item.name);
-    if (isPending) return isSpreadsheet ? 'New construction sheet spreadsheet ready to save with this log.' : 'New construction sheet photo ready to save with this log.';
-    return isSpreadsheet ? 'Construction sheet spreadsheet attached to this log.' : 'Construction sheet photo attached to this log.';
+    return isPending ? 'New construction sheet snapshot ready to save with this log.' : 'Construction sheet snapshot attached to this log.';
+  }
+
+  function describeConstructionSheetFileItem(item) {
+    if (!item) return 'No construction sheet XLSM attached.';
+    const isPending = Boolean(item.file);
+    return isPending ? 'New construction sheet XLSM ready to save with this log.' : 'Construction sheet XLSM attached to this log.';
   }
 
   async function openBlobInViewer(blob, type, description, options) {
@@ -466,6 +480,10 @@ document.addEventListener('DOMContentLoaded', function () {
     return deleteSpecialMediaForLog(logId, 'construction-sheet');
   }
 
+  async function deleteConstructionSheetFileForLog(logId) {
+    return deleteSpecialMediaForLog(logId, 'construction-sheet-file');
+  }
+
   async function deleteCutSheetForLog(logId) {
     return deleteSpecialMediaForLog(logId, 'cut-sheet');
   }
@@ -476,6 +494,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
   async function getConstructionSheetForLog(logId) {
     return getSpecialMediaForLog(logId, 'construction-sheet');
+  }
+
+  async function getConstructionSheetFileForLog(logId) {
+    return getSpecialMediaForLog(logId, 'construction-sheet-file');
   }
 
   async function getCutSheetForLog(logId) {
@@ -534,6 +556,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function clearPendingConstructionSheetInput() {
     constructionSheetCaptureInput.value = '';
+    if (constructionSnapshotUploadInput) constructionSnapshotUploadInput.value = '';
+  }
+
+  function clearPendingConstructionSheetFileInput() {
     if (constructionSheetUploadInput) constructionSheetUploadInput.value = '';
   }
 
@@ -542,32 +568,40 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   async function refreshConstructionSheetUi() {
-    let existingSheet = null;
-    if (!pendingConstructionSheet && editingIdInput.value) {
+    let existingSnapshot = null;
+    let existingFile = null;
+    if (editingIdInput.value) {
       try {
-        existingSheet = await getConstructionSheetForLog(editingIdInput.value);
+        if (!pendingConstructionSheet) existingSnapshot = await getConstructionSheetForLog(editingIdInput.value);
+        if (!pendingConstructionSheetFile) existingFile = await getConstructionSheetFileForLog(editingIdInput.value);
       } catch (err) {
         console.error(err);
       }
     }
 
-    if (pendingConstructionSheet) {
-      constructionSheetStatus.textContent = describeConstructionSheetItem(pendingConstructionSheet);
+    const statusParts = [];
+    const activeSnapshot = pendingConstructionSheet || existingSnapshot;
+    const activeFile = pendingConstructionSheetFile || existingFile;
+
+    if (activeSnapshot) {
+      statusParts.push(describeConstructionSheetSnapshotItem(activeSnapshot));
       topOpenConstructionSheetBtn.hidden = false;
       removeConstructionSheetBtn.hidden = false;
-      return;
+    } else {
+      topOpenConstructionSheetBtn.hidden = true;
+      removeConstructionSheetBtn.hidden = true;
     }
 
-    if (existingSheet) {
-      constructionSheetStatus.textContent = describeConstructionSheetItem(existingSheet);
-      topOpenConstructionSheetBtn.hidden = false;
-      removeConstructionSheetBtn.hidden = false;
-      return;
+    if (activeFile) {
+      statusParts.push(describeConstructionSheetFileItem(activeFile));
+      if (topDownloadConstructionSheetBtn) topDownloadConstructionSheetBtn.hidden = false;
+      if (removeConstructionSheetFileBtn) removeConstructionSheetFileBtn.hidden = false;
+    } else {
+      if (topDownloadConstructionSheetBtn) topDownloadConstructionSheetBtn.hidden = true;
+      if (removeConstructionSheetFileBtn) removeConstructionSheetFileBtn.hidden = true;
     }
 
-    constructionSheetStatus.textContent = 'No construction sheet attached.';
-    topOpenConstructionSheetBtn.hidden = true;
-    removeConstructionSheetBtn.hidden = true;
+    constructionSheetStatus.innerHTML = statusParts.length ? statusParts.map(function (part) { return escapeHtml(part); }).join('<br>') : 'No construction sheet snapshot or XLSM attached.';
   }
 
   async function refreshCutSheetUi() {
@@ -603,7 +637,12 @@ document.addEventListener('DOMContentLoaded', function () {
     pendingConstructionSheet = null;
     clearPendingConstructionSheetInput();
     refreshConstructionSheetUi();
-    refreshCutSheetUi();
+  }
+
+  function clearPendingConstructionSheetFile() {
+    pendingConstructionSheetFile = null;
+    clearPendingConstructionSheetFileInput();
+    refreshConstructionSheetUi();
   }
 
   function clearPendingCutSheet() {
@@ -779,6 +818,7 @@ document.addEventListener('DOMContentLoaded', function () {
     netPayloadInput.value = '';
     clearPendingMedia();
     clearPendingConstructionSheet();
+    clearPendingConstructionSheetFile();
     clearPendingCutSheet();
     if (attachedMediaSection) {
       attachedMediaSection.hidden = true;
@@ -845,6 +885,7 @@ document.addEventListener('DOMContentLoaded', function () {
       entry.notes ||
       pendingMedia.length ||
       pendingConstructionSheet ||
+      pendingConstructionSheetFile ||
       pendingCutSheet
     );
   }
@@ -984,6 +1025,7 @@ document.addEventListener('DOMContentLoaded', function () {
     notesInput.value = entry.notes || '';
     clearPendingMedia();
     clearPendingConstructionSheet();
+    clearPendingConstructionSheetFile();
     clearPendingCutSheet();
     selectedMediaInfo.textContent = 'Existing attached media will stay unless you delete it. Any new files you add now will be attached when you save, and saved media notes can be edited below.';
     refreshConstructionSheetUi();
@@ -1010,6 +1052,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (itemsToAttach.some(function (item) { return item.role === 'construction-sheet'; })) {
       await deleteConstructionSheetForLog(entry.id);
+    }
+
+    if (itemsToAttach.some(function (item) { return item.role === 'construction-sheet-file'; })) {
+      await deleteConstructionSheetFileForLog(entry.id);
     }
 
     if (itemsToAttach.some(function (item) { return item.role === 'cut-sheet'; })) {
@@ -1394,6 +1440,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const pendingToAttach = pendingMedia.slice();
     if (pendingConstructionSheet) pendingToAttach.push(pendingConstructionSheet);
+    if (pendingConstructionSheetFile) pendingToAttach.push(pendingConstructionSheetFile);
     if (pendingCutSheet) pendingToAttach.push(pendingCutSheet);
     const wasEditing = Boolean(editingIdInput.value);
 
@@ -1433,6 +1480,12 @@ document.addEventListener('DOMContentLoaded', function () {
     constructionSheetCaptureInput.click();
   });
 
+  if (uploadConstructionSnapshotBtn) {
+    uploadConstructionSnapshotBtn.addEventListener('click', function () {
+      constructionSnapshotUploadInput.click();
+    });
+  }
+
   if (uploadConstructionSheetBtn) {
     uploadConstructionSheetBtn.addEventListener('click', function () {
       constructionSheetUploadInput.click();
@@ -1447,12 +1500,29 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!editingIdInput.value) return;
     const existingSheet = await getConstructionSheetForLog(editingIdInput.value);
     if (!existingSheet) {
-      setStatus('No construction sheet is attached to this log yet.', 'warning');
+      setStatus('No construction sheet snapshot is attached to this log yet.', 'warning');
       await refreshConstructionSheetUi();
       return;
     }
     await openSavedConstructionSheetItem(existingSheet);
   });
+
+  if (topDownloadConstructionSheetBtn) {
+    topDownloadConstructionSheetBtn.addEventListener('click', async function () {
+      if (pendingConstructionSheetFile) {
+        await downloadConstructionSheetFileItem(pendingConstructionSheetFile);
+        return;
+      }
+      if (!editingIdInput.value) return;
+      const existingFile = await getConstructionSheetFileForLog(editingIdInput.value);
+      if (!existingFile) {
+        setStatus('No construction sheet XLSM is attached to this log yet.', 'warning');
+        await refreshConstructionSheetUi();
+        return;
+      }
+      await downloadSavedConstructionSheetFile(existingFile);
+    });
+  }
 
   takeCutSheetBtn.addEventListener('click', function () {
     cutSheetCaptureInput.click();
@@ -1475,10 +1545,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
   removeConstructionSheetBtn.addEventListener('click', async function () {
     if (pendingConstructionSheet) {
-      const ok = confirm('Remove the new construction sheet before saving?');
+      const ok = confirm('Remove the new construction sheet snapshot before saving?');
       if (!ok) return;
       clearPendingConstructionSheet();
-      setStatus('Pending construction sheet removed.', 'warning');
+      setStatus('Pending construction sheet snapshot removed.', 'warning');
       return;
     }
 
@@ -1489,19 +1559,51 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
 
-    const ok = confirm('Delete the saved construction sheet from this log?');
+    const ok = confirm('Delete the saved construction sheet snapshot from this log?');
     if (!ok) return;
     try {
       await deleteConstructionSheetForLog(editingIdInput.value);
       await syncMediaCountForEntry(editingIdInput.value);
       await refreshConstructionSheetUi();
       await loadEntries();
-      setStatus('Construction sheet removed from this log.', 'success');
+      setStatus('Construction sheet snapshot removed from this log.', 'success');
     } catch (err) {
       console.error(err);
-      setStatus('Could not remove the construction sheet.', 'error');
+      setStatus('Could not remove the construction sheet snapshot.', 'error');
     }
   });
+
+  if (removeConstructionSheetFileBtn) {
+    removeConstructionSheetFileBtn.addEventListener('click', async function () {
+      if (pendingConstructionSheetFile) {
+        const ok = confirm('Remove the new construction sheet XLSM before saving?');
+        if (!ok) return;
+        clearPendingConstructionSheetFile();
+        setStatus('Pending construction sheet XLSM removed.', 'warning');
+        return;
+      }
+
+      if (!editingIdInput.value) return;
+      const existingFile = await getConstructionSheetFileForLog(editingIdInput.value);
+      if (!existingFile) {
+        await refreshConstructionSheetUi();
+        return;
+      }
+
+      const ok = confirm('Delete the saved construction sheet XLSM from this log?');
+      if (!ok) return;
+      try {
+        await deleteConstructionSheetFileForLog(editingIdInput.value);
+        await syncMediaCountForEntry(editingIdInput.value);
+        await refreshConstructionSheetUi();
+        await loadEntries();
+        setStatus('Construction sheet XLSM removed from this log.', 'success');
+      } catch (err) {
+        console.error(err);
+        setStatus('Could not remove the construction sheet XLSM.', 'error');
+      }
+    });
+  }
 
   removeCutSheetBtn.addEventListener('click', async function () {
     if (pendingCutSheet) {
@@ -1557,12 +1659,28 @@ document.addEventListener('DOMContentLoaded', function () {
       localId: uid(),
       file: file,
       source: 'construction sheet camera',
-      description: 'Construction sheet',
+      description: 'Construction sheet snapshot',
       role: 'construction-sheet'
     };
     refreshConstructionSheetUi();
-    setStatus('Construction sheet photo added. Save the log to attach it.', 'success');
+    setStatus('Construction sheet snapshot added. Save the log to attach it.', 'success');
   });
+
+  if (constructionSnapshotUploadInput) {
+    constructionSnapshotUploadInput.addEventListener('change', function () {
+      const file = constructionSnapshotUploadInput.files && constructionSnapshotUploadInput.files[0];
+      if (!file) return;
+      pendingConstructionSheet = {
+        localId: uid(),
+        file: file,
+        source: 'construction sheet snapshot upload',
+        description: 'Construction sheet snapshot',
+        role: 'construction-sheet'
+      };
+      refreshConstructionSheetUi();
+      setStatus('Construction sheet snapshot uploaded. Save the log to attach it.', 'success');
+    });
+  }
 
   if (constructionSheetUploadInput) {
     constructionSheetUploadInput.addEventListener('change', function () {
@@ -1574,15 +1692,15 @@ document.addEventListener('DOMContentLoaded', function () {
         constructionSheetUploadInput.value = '';
         return;
       }
-      pendingConstructionSheet = {
+      pendingConstructionSheetFile = {
         localId: uid(),
         file: file,
         source: 'construction sheet upload',
-        description: 'Construction sheet',
-        role: 'construction-sheet'
+        description: 'Construction sheet XLSM',
+        role: 'construction-sheet-file'
       };
       refreshConstructionSheetUi();
-      setStatus('Construction sheet spreadsheet added. Save the log to attach it.', 'success');
+      setStatus('Construction sheet XLSM added. Save the log to attach it.', 'success');
     });
   }
 

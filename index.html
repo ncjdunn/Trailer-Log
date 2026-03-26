@@ -408,6 +408,7 @@
 
           <div class="sheet-top-row">
             <button type="button" id="topOpenConstructionSheetBtn" class="secondary" hidden>Open Construction Sheet</button>
+            <button type="button" id="topDownloadConstructionSheetBtn" class="secondary" hidden>Download XLSM</button>
           </div>
 
           <div class="media-panel">
@@ -457,13 +458,18 @@
           <div class="media-panel">
             <div class="section-title">Construction Sheet</div>
             <div class="construction-sheet-row">
-              <button type="button" id="takeConstructionSheetBtn" class="secondary">Take Sheet Photo</button>
+              <button type="button" id="takeConstructionSheetBtn" class="secondary">Take Snapshot Photo</button>
+              <button type="button" id="uploadConstructionSnapshotBtn" class="secondary">Upload Snapshot</button>
+              <button type="button" id="removeConstructionSheetBtn" class="ghost" hidden>Remove Snapshot</button>
+            </div>
+            <div class="construction-sheet-row">
               <button type="button" id="uploadConstructionSheetBtn" class="secondary">Upload .xlsm</button>
-              <button type="button" id="removeConstructionSheetBtn" class="ghost" hidden>Remove Sheet</button>
+              <button type="button" id="removeConstructionSheetFileBtn" class="ghost" hidden>Remove XLSM</button>
             </div>
             <input class="hidden-file" type="file" id="constructionSheetCaptureInput" accept="image/*" capture="environment">
+            <input class="hidden-file" type="file" id="constructionSnapshotUploadInput" accept="image/*">
             <input class="hidden-file" type="file" id="constructionSheetUploadInput" accept=".xlsm,application/vnd.ms-excel.sheet.macroenabled.12">
-            <div id="constructionSheetStatus" class="hint construction-sheet-status">No construction sheet attached.</div>
+            <div id="constructionSheetStatus" class="hint construction-sheet-status">No construction sheet snapshot or XLSM attached.</div>
           </div>
 
           <div class="media-panel">
