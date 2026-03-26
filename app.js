@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const videoCaptureInput = document.getElementById('videoCaptureInput');
   const selectedMediaInfo = document.getElementById('selectedMediaInfo');
   const pendingMediaPreview = document.getElementById('pendingMediaPreview');
+  const attachedMediaSection = document.getElementById('attachedMediaSection');
   const topOpenConstructionSheetBtn = document.getElementById('topOpenConstructionSheetBtn');
   const takeConstructionSheetBtn = document.getElementById('takeConstructionSheetBtn');
   const removeConstructionSheetBtn = document.getElementById('removeConstructionSheetBtn');
@@ -620,6 +621,57 @@ document.addEventListener('DOMContentLoaded', function () {
     pendingMediaPreview.innerHTML = html;
   }
 
+  async function renderAttachedMediaPreview() {
+    if (!attachedMediaSection) return;
+
+    const logId = editingIdInput.value;
+    if (!logId) {
+      attachedMediaSection.hidden = true;
+      attachedMediaSection.innerHTML = '';
+      return;
+    }
+
+    let mediaItems = [];
+    try {
+      mediaItems = getRegularMediaItems(await getMediaForLog(logId));
+    } catch (err) {
+      console.error(err);
+      attachedMediaSection.hidden = true;
+      attachedMediaSection.innerHTML = '';
+      return;
+    }
+
+    if (!mediaItems.length) {
+      attachedMediaSection.hidden = true;
+      attachedMediaSection.innerHTML = '';
+      return;
+    }
+
+    attachedMediaSection.hidden = false;
+    attachedMediaSection.innerHTML = mediaItems.map(function (item) {
+      const objectUrl = URL.createObjectURL(item.blob);
+      activeObjectUrls.push(objectUrl);
+      const preview = item.type && item.type.startsWith('video/')
+        ? '<video preload="metadata" muted playsinline src="' + objectUrl + '"></video>'
+        : '<img src="' + objectUrl + '" alt="Attached media">';
+      const noteHtml = (item.description || '').trim()
+        ? '<div class="media-desc">' + escapeHtml(item.description.trim()) + '</div>'
+        : '';
+      return (
+        '<div class="media-card">' +
+          '<button type="button" class="media-open-btn saved-open-media" data-media-id="' + escapeHtml(item.id) + '" aria-label="Open attached media full screen">' + preview + '</button>' +
+          '<div class="media-card-body">' +
+            noteHtml +
+            '<div class="media-card-actions">' +
+              '<button type="button" class="secondary small-btn edit-media-note" data-media-id="' + escapeHtml(item.id) + '" data-log-id="' + escapeHtml(logId) + '">Edit Note</button>' +
+              '<button type="button" class="danger small-btn delete-media-item" data-media-id="' + escapeHtml(item.id) + '" data-log-id="' + escapeHtml(logId) + '">Delete Media</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+  }
+
   function resetForm() {
     form.reset();
     editingIdInput.value = '';
@@ -629,6 +681,10 @@ document.addEventListener('DOMContentLoaded', function () {
     clearPendingMedia();
     clearPendingConstructionSheet();
     clearPendingCutSheet();
+    if (attachedMediaSection) {
+      attachedMediaSection.hidden = true;
+      attachedMediaSection.innerHTML = '';
+    }
     cancelEditBtn.hidden = true;
     saveBtn.textContent = 'Save Final Log';
     saveDraftBtn.textContent = 'Save Draft';
@@ -833,6 +889,9 @@ document.addEventListener('DOMContentLoaded', function () {
     selectedMediaInfo.textContent = 'Existing attached media will stay unless you delete it. Any new files you add now will be attached when you save, and saved media notes can be edited below.';
     refreshConstructionSheetUi();
     refreshCutSheetUi();
+    renderAttachedMediaPreview().catch(function (err) {
+      console.error(err);
+    });
     cancelEditBtn.hidden = false;
     saveBtn.textContent = entry.status === 'draft' ? 'Save Final Log' : 'Update Final Log';
     saveDraftBtn.textContent = 'Update Draft';
@@ -1438,6 +1497,68 @@ document.addEventListener('DOMContentLoaded', function () {
       openPendingMediaViewer(targetId);
     }
   });
+
+
+  if (attachedMediaSection) {
+    attachedMediaSection.addEventListener('click', async function (event) {
+      const mediaOpenButton = event.target.closest('.saved-open-media');
+      if (mediaOpenButton) {
+        const mediaId = mediaOpenButton.getAttribute('data-media-id');
+        if (mediaId) openSavedMediaViewer(mediaId);
+        return;
+      }
+
+      const mediaEditButton = event.target.closest('.edit-media-note');
+      if (mediaEditButton) {
+        const mediaId = mediaEditButton.getAttribute('data-media-id');
+        const logId = mediaEditButton.getAttribute('data-log-id');
+        if (!mediaId || !logId) return;
+        try {
+          const mediaItem = await getMediaRecordById(mediaId);
+          if (!mediaItem) {
+            setStatus('That media item could not be found.', 'error');
+            return;
+          }
+          const updatedDescription = window.prompt('Edit media note/description:', mediaItem.description || '');
+          if (updatedDescription === null) {
+            setStatus('Media note edit canceled.', 'warning');
+            return;
+          }
+          await updateMediaDescription(mediaId, updatedDescription.trim());
+          await syncMediaCountForEntry(logId);
+          await renderAttachedMediaPreview();
+          await loadEntries();
+          setStatus('Media note updated.', 'success');
+        } catch (err) {
+          console.error(err);
+          setStatus('Could not update that media note.', 'error');
+        }
+        return;
+      }
+
+      const mediaDeleteButton = event.target.closest('.delete-media-item');
+      if (mediaDeleteButton) {
+        const mediaId = mediaDeleteButton.getAttribute('data-media-id');
+        const logId = mediaDeleteButton.getAttribute('data-log-id');
+        if (!mediaId || !logId) return;
+        const ok = confirm('Delete this attached media item from the log?');
+        if (!ok) {
+          setStatus('Media delete canceled.', 'warning');
+          return;
+        }
+        try {
+          await deleteMediaRecordById(mediaId);
+          await syncMediaCountForEntry(logId);
+          await renderAttachedMediaPreview();
+          await loadEntries();
+          setStatus('Media deleted from this log.', 'success');
+        } catch (err) {
+          console.error(err);
+          setStatus('Could not delete that media item.', 'error');
+        }
+      }
+    });
+  }
 
   searchInput.addEventListener('input', function () { loadEntries(); });
   sortSelect.addEventListener('change', function () { loadEntries(); });
