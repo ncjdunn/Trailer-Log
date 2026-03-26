@@ -282,6 +282,11 @@
     }
     .entry-actions{margin-top:12px}
     .entry-actions button{padding:8px 11px; font-size:.9rem; border-radius:10px}
+    .entry-openable{cursor:pointer}
+    .entry-openable:hover{border-color:#bfcdee; box-shadow:0 12px 26px rgba(31,42,68,0.08)}
+    .entry-top-compact{align-items:center}
+    .entry-summary-line{margin-top:6px}
+    .entry-open-hint{font-size:.84rem; color:var(--primary-2); font-weight:800; white-space:nowrap}
 
     .status-chip{
       display:inline-flex;
@@ -550,7 +555,7 @@
     <section class="panel">
       <div class="panel-header">
         <h2>Saved Entries</h2>
-        <p class="subtext">Search by tube number, customer, destination, trailer number, status, or notes.</p>
+        <p class="subtext">Tap a saved log to open it. Search by tube number or customer / destination.</p>
       </div>
       <div class="panel-body">
         <div class="toolbar">

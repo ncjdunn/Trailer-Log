@@ -784,71 +784,17 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
 
-    const html = await Promise.all(entries.map(async function (entry) {
-      const allMediaItems = await getMediaForLog(entry.id);
-      const constructionSheet = getConstructionSheetItem(allMediaItems);
-      const cutSheet = getCutSheetItem(allMediaItems);
-      const mediaItems = getRegularMediaItems(allMediaItems);
-      const axleSummary = entry.axleWeights && entry.axleWeights.length
-        ? entry.axleWeights.map(function (weight, index) {
-            return 'A' + (index + 1) + ': ' + (weight != null ? formatNumber(weight) : '-') + ' lbs';
-          }).join(', ')
-        : '-';
-
-      const mediaHtml = mediaItems.length
-        ? '<div class="media-grid">' + mediaItems.map(function (item) {
-            const objectUrl = URL.createObjectURL(item.blob);
-            activeObjectUrls.push(objectUrl);
-            const mediaTag = item.type && item.type.startsWith('video/')
-              ? '<video preload="metadata" muted playsinline src="' + objectUrl + '"></video>'
-              : '<img src="' + objectUrl + '" alt="' + escapeHtml(item.description || 'Media preview') + '">';
-            return (
-              '<div class="media-card">' +
-                '<button type="button" class="media-open-btn saved-open-media" data-media-id="' + escapeHtml(item.id) + '" aria-label="Open media full screen">' + mediaTag + '</button>' +
-                '<div class="media-card-body">' +
-                  (item.description ? '<div class="media-desc">' + escapeHtml(item.description) + '</div>' : '') +
-                  '<div class="media-card-actions">' +
-                    '<button type="button" class="secondary small-btn edit-media-note" data-log-id="' + escapeHtml(entry.id) + '" data-media-id="' + escapeHtml(item.id) + '">Edit Note</button>' +
-                    '<button type="button" class="ghost small-btn delete-media-item" data-log-id="' + escapeHtml(entry.id) + '" data-media-id="' + escapeHtml(item.id) + '">Delete Media</button>' +
-                  '</div>' +
-                '</div>' +
-              '</div>'
-            );
-          }).join('') + '</div>'
-        : '';
-
-      const constructionHtml = constructionSheet
-        ? '<div class="entry-meta"><strong>Construction sheet:</strong><button type="button" class="secondary small-btn inline-mini-btn open-construction-sheet" data-media-id="' + escapeHtml(constructionSheet.id) + '">Open Sheet</button></div>'
-        : '';
-
-      const cutSheetHtml = cutSheet
-        ? '<div class="entry-meta"><strong>Cut sheet:</strong><button type="button" class="secondary small-btn inline-mini-btn open-cut-sheet" data-media-id="' + escapeHtml(cutSheet.id) + '">Open Cut Sheet</button></div>'
-        : '';
-
-      const statusClass = entry.status === 'draft' ? 'draft' : 'final';
-      const statusLabel = entry.status === 'draft' ? 'Draft' : 'Final';
-
+    const html = entries.map(function (entry) {
       return (
-        '<li class="entry">' +
-          '<div class="entry-top">' +
-            '<div>' +
-              '<div class="status-chip ' + statusClass + '">' + statusLabel + '</div>' +
-              '<div class="entry-title">Tube ' + escapeHtml(entry.tubeNumber || '—') + ' • ' + escapeHtml(entry.destination || 'No destination yet') + '</div>' +
-              '<div class="entry-meta">Liner: Length ' + formatLinerValue(entry.linerLength, 'ft') + ' • Width ' + formatLinerValue(entry.linerWidth, 'in') + ' • Gauge ' + formatLinerValue(entry.linerGauge, 'mm') + '</div>' +
-              '<div class="entry-meta">Trailer: ' + escapeHtml(entry.trailerType || '-') + ' • Length: ' + escapeHtml(entry.trailerLength ?? '-') + ' ft • Trailer #: ' + escapeHtml(entry.trailerNumber || '-') + '</div>' +
+        '<li class="entry entry-openable" data-entry-id="' + escapeHtml(entry.id) + '">' +
+          '<div class="entry-top entry-top-compact">' +
+            '<div class="entry-summary">' +
+              '<div class="entry-title">Tube ' + escapeHtml(entry.tubeNumber || '—') + '</div>' +
+              '<div class="entry-meta entry-summary-line"><strong>Customer / Destination:</strong> ' + escapeHtml(entry.destination || '—') + '</div>' +
             '</div>' +
-            '<div class="entry-date">Updated ' + formatDateTime(entry.updatedAt || entry.createdAt) + '</div>' +
+            '<div class="entry-open-hint">Tap to open</div>' +
           '</div>' +
-          '<div class="entry-weights">Truck: ' + formatNumber(entry.truckWeight) + ' lbs • Empty trailer: ' + formatNumber(entry.emptyTrailerWeight) + ' lbs • Truck + trailer: ' + formatNumber(entry.truckAndTrailerWeight) + ' lbs • Net payload: ' + formatNumber(entry.netPayload) + ' lbs</div>' +
-          '<div class="entry-meta">Axles: ' + escapeHtml(entry.axles || '-') + ' • Axle weights: ' + escapeHtml(axleSummary) + '</div>' +
-          '<div class="entry-meta">Height before: ' + escapeHtml(entry.heightBeforeVacuum ?? '-') + ' ft • After: ' + escapeHtml(entry.heightAfterVacuum ?? '-') + ' ft</div>' +
-          '<div class="entry-meta">Departure: ' + formatDateOnly(entry.departureDate) + ' • Created: ' + formatDateTime(entry.createdAt) + '</div>' +
-          (entry.notes ? '<div class="entry-notes"><strong>Notes:</strong> ' + escapeHtml(entry.notes) + '</div>' : '') +
-          constructionHtml +
-          cutSheetHtml +
-          mediaHtml +
           '<div class="entry-actions">' +
-            '<button type="button" class="secondary edit-entry" data-id="' + escapeHtml(entry.id) + '">Edit</button>' +
             '<button type="button" class="secondary share-entry" data-id="' + escapeHtml(entry.id) + '">Share</button>' +
             '<button type="button" class="secondary print-entry" data-id="' + escapeHtml(entry.id) + '">Print / PDF</button>' +
             '<button type="button" class="warning duplicate-entry" data-id="' + escapeHtml(entry.id) + '">Duplicate</button>' +
@@ -856,7 +802,7 @@ document.addEventListener('DOMContentLoaded', function () {
           '</div>' +
         '</li>'
       );
-    }));
+    });
 
     entriesEl.innerHTML = html.join('');
   }
@@ -1578,6 +1524,18 @@ document.addEventListener('DOMContentLoaded', function () {
         console.error(err);
         setStatus('Could not delete that media item.', 'error');
       }
+      return;
+    }
+
+
+    const openEntryCard = event.target.closest('.entry-openable[data-entry-id]');
+    if (openEntryCard && !event.target.closest('button')) {
+      const entryId = openEntryCard.getAttribute('data-entry-id');
+      const entries = getEntries();
+      const entry = entries.find(function (item) { return item.id === entryId; });
+      if (!entry) return;
+      populateFormForEdit(entry);
+      setStatus('Opened ' + (entry.status === 'draft' ? 'draft' : 'log') + ' for editing.', 'warning');
       return;
     }
 
