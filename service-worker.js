@@ -1,4 +1,4 @@
-const CACHE_NAME = 'liner-track-search-media-notes-v1';
+const CACHE_NAME = 'liner-track-media-page-button-v1';
 const FILES_TO_CACHE = [
   './',
   './index.html',

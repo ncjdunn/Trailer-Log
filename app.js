@@ -1024,6 +1024,15 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     const entries = await getFilteredAndSortedEntries();
 
+    const mediaCounts = await Promise.all(entries.map(async function (entry) {
+      const count = getRegularMediaItems(await getMediaForLog(entry.id)).length;
+      return { id: entry.id, count: count };
+    }));
+    const countById = {};
+    mediaCounts.forEach(function (item) {
+      countById[item.id] = item.count;
+    });
+
     statCount.textContent = String(allEntries.length);
     statShown.textContent = String(entries.length);
     statLastSaved.textContent = allEntries.length ? formatDateTime(allEntries[0].updatedAt || allEntries[0].createdAt) : '—';
@@ -1034,6 +1043,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     const html = entries.map(function (entry) {
+      const mediaCount = Number(countById[entry.id] || 0);
+      const mediaButton = mediaCount > 0
+        ? '<button type="button" class="secondary view-media-entry" data-id="' + escapeHtml(entry.id) + '">View Media (' + mediaCount + ')</button>'
+        : '';
       return (
         '<li class="entry entry-openable" data-entry-id="' + escapeHtml(entry.id) + '">' +
           '<div class="entry-top entry-top-compact">' +
@@ -1044,6 +1057,7 @@ document.addEventListener('DOMContentLoaded', function () {
             '<div class="entry-open-hint">Tap to open</div>' +
           '</div>' +
           '<div class="entry-actions">' +
+            mediaButton +
             '<button type="button" class="secondary share-entry" data-id="' + escapeHtml(entry.id) + '">Share</button>' +
             '<button type="button" class="secondary print-entry" data-id="' + escapeHtml(entry.id) + '">Print / PDF</button>' +
             '<button type="button" class="danger delete-entry" data-id="' + escapeHtml(entry.id) + '">Delete</button>' +
@@ -1079,7 +1093,7 @@ document.addEventListener('DOMContentLoaded', function () {
     clearPendingConstructionSheet();
     clearPendingConstructionSheetFile();
     clearPendingCutSheet();
-    selectedMediaInfo.textContent = "Existing attached media stays with this log. Use Open This Log's Media at the top to view, edit notes, or delete saved items for the log you are currently editing. Any new files you add now will attach when you save.";
+    selectedMediaInfo.textContent = "Existing attached media stays with this log. Use Open This Log's Media at the top, or View Media on a saved log card, to open the separate media page for that log. Any new files you add now will attach when you save.";
     refreshConstructionSheetUi();
     refreshCutSheetUi();
     renderAttachedMediaPreview().catch(function (err) {
@@ -2001,6 +2015,11 @@ document.addEventListener('DOMContentLoaded', function () {
     if (button.classList.contains('edit-entry')) {
       populateFormForEdit(entry);
       setStatus('Editing ' + (entry.status === 'draft' ? 'draft' : 'log') + '.', 'warning');
+      return;
+    }
+
+    if (button.classList.contains('view-media-entry')) {
+      openSavedMediaPage(entry.id);
       return;
     }
 
