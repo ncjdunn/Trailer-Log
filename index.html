@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Trailer Weight Logger</title>
+  <title>Liner Track</title>
   <meta name="theme-color" content="#4169E1">
   <meta name="description" content="Offline-ready trailer weight logger PWA for axle weights, trailer details, notes, draft saves, and local media attachments.">
   <link rel="manifest" href="./manifest.json">
@@ -395,9 +395,9 @@
     <section class="panel">
       <div class="panel-header">
         <div class="brand-head">
-          <img src="./UFflag.png" alt="Trailer Weight Logger logo" class="brand-logo">
+          <img src="./UFflag.png" alt="Liner Track logo" class="brand-logo">
           <div class="brand-copy">
-            <h1>Trailer Weight Logger</h1>
+            <h1>Liner Track</h1>
           </div>
         </div>
       </div>
@@ -407,6 +407,7 @@
           <input type="hidden" id="editingId">
 
           <div class="sheet-top-row">
+            <button type="button" id="topOpenSavedMediaBtn" class="secondary" hidden>Open This Log's Media</button>
             <button type="button" id="topOpenConstructionSheetBtn" class="secondary" hidden>Open Construction Sheet</button>
             <button type="button" id="topDownloadConstructionSheetBtn" class="secondary" hidden>Download XLSM</button>
           </div>
@@ -429,6 +430,7 @@
             <div id="pendingMediaPreview"></div>
 
             <div id="attachedMediaSection" class="media-grid" hidden></div>
+            <div id="savedMediaHint" class="hint">Saved media opens from the top button when a log already has attached media.</div>
           </div>
 
           <div class="grid-2">

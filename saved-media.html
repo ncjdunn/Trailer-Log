@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Liner Track - Saved Media</title>
+  <meta name="theme-color" content="#4169E1">
+  <style>
+    :root{
+      --bg:#eef1f5;
+      --panel:#f8fafc;
+      --panel-2:#ffffff;
+      --text:#1f2a44;
+      --muted:#5f6f8c;
+      --line:#d6ddeb;
+      --primary:#4169e1;
+      --primary-2:#2747b0;
+      --danger:#d8515c;
+      --danger-2:#b93745;
+      --shadow:0 18px 40px rgba(39,71,176,0.12);
+      --radius:16px;
+      --focus:0 0 0 4px rgba(65,105,225,0.18);
+    }
+    *{box-sizing:border-box}
+    html{color-scheme:light}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+      background:radial-gradient(circle at top, rgba(65,105,225,0.18), transparent 34%),linear-gradient(180deg, #f4f7fb 0%, var(--bg) 100%);
+      color:var(--text);
+      min-height:100vh;
+      padding:14px;
+    }
+    .wrap{max-width:860px;margin:0 auto}
+    .panel{background:linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,250,252,0.96));border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+    .panel-header{padding:18px 18px 12px;border-bottom:1px solid rgba(39,71,176,0.10);background:linear-gradient(180deg, rgba(65,105,225,0.06), rgba(255,255,255,0))}
+    .panel-body{padding:16px 18px 18px}
+    h1,h2,p{margin:0}
+    h1{font-size:1.45rem;color:#1b2a4a}
+    .subtext{margin-top:6px;color:var(--muted);line-height:1.45}
+    .topbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+    button{padding:11px 14px;background:linear-gradient(180deg, var(--primary), var(--primary-2));color:#fff;border:none;border-radius:12px;cursor:pointer;font:inherit;font-weight:700;box-shadow:0 10px 20px rgba(39,71,176,0.18)}
+    button.secondary{background:linear-gradient(180deg, #f8fbff, #e9effa);box-shadow:none;border:1px solid #cfd8ec;color:var(--primary-2)}
+    button.danger{background:linear-gradient(180deg, var(--danger), var(--danger-2))}
+    .status{min-height:24px;margin-top:14px;font-size:.93rem;color:#24407f}
+    .status.success{color:#176943}.status.warning{color:#8d6512}.status.error{color:#b93745}
+    .media-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+    .media-card{border:1px solid var(--line);border-radius:16px;background:#fff;overflow:hidden;box-shadow:0 10px 24px rgba(39,71,176,0.08)}
+    .media-open-btn{display:block;width:100%;padding:0;background:#dde6fb;border:none;box-shadow:none;cursor:pointer}
+    .media-open-btn img,.media-open-btn video{display:block;width:100%;height:220px;object-fit:cover;background:#e9eef9}
+    .media-card-body{padding:12px 12px 14px}
+    .media-desc{font-size:.95rem;line-height:1.45;color:#24365a;min-height:22px;white-space:pre-wrap}
+    .media-card-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .media-card-actions button{padding:8px 11px;font-size:.88rem;border-radius:10px;box-shadow:none}
+    .empty-state{padding:24px;text-align:center;border:1px dashed #c9d5e8;border-radius:16px;background:#f8fbff;color:var(--muted)}
+    @media (max-width:620px){body{padding:12px}.panel-header,.panel-body{padding-left:14px;padding-right:14px}.media-card-actions button,.topbar button{flex:1 1 0}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="topbar">
+          <button type="button" class="secondary" id="backBtn">Back to Log</button>
+        </div>
+        <h1 id="pageTitle">Saved Media</h1>
+        <p class="subtext" id="pageSubtitle">Open media, edit notes, or delete saved items for this log.</p>
+      </div>
+      <div class="panel-body">
+        <div id="statusMessage" class="status" aria-live="polite"></div>
+        <div id="mediaGrid" class="media-grid"></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function(){
+      const params = new URLSearchParams(window.location.search);
+      const logId = params.get('logId') || '';
+      const returnUrl = params.get('returnUrl') || './index.html';
+      const tube = params.get('tube') || '';
+      const destination = params.get('destination') || '';
+      const DB_NAME = 'TrailerWeightLoggerDB';
+      const DB_VERSION = 3;
+      const MEDIA_STORE = 'media';
+      const statusEl = document.getElementById('statusMessage');
+      const mediaGrid = document.getElementById('mediaGrid');
+      const pageTitle = document.getElementById('pageTitle');
+      const pageSubtitle = document.getElementById('pageSubtitle');
+      let dbPromise = null;
+      let activeObjectUrls = [];
+
+      function setStatus(message, type){
+        statusEl.textContent = message || '';
+        statusEl.className = 'status' + (type ? ' ' + type : '');
+      }
+      function escapeHtml(value){
+        return String(value ?? '')
+          .replace(/&/g,'&amp;')
+          .replace(/</g,'&lt;')
+          .replace(/>/g,'&gt;')
+          .replace(/"/g,'&quot;')
+          .replace(/'/g,'&#39;');
+      }
+      function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+      function revokeObjectUrls(){ activeObjectUrls.forEach(function(url){ URL.revokeObjectURL(url); }); activeObjectUrls=[]; }
+      function openDb(){
+        if (dbPromise) return dbPromise;
+        dbPromise = new Promise(function(resolve,reject){
+          const request = indexedDB.open(DB_NAME, DB_VERSION);
+          request.onupgradeneeded = function(event){
+            const db = event.target.result;
+            let store;
+            if (!db.objectStoreNames.contains(MEDIA_STORE)) {
+              store = db.createObjectStore(MEDIA_STORE, { keyPath: 'id' });
+            } else {
+              store = request.transaction.objectStore(MEDIA_STORE);
+            }
+            if (store && !store.indexNames.contains('logId')) {
+              store.createIndex('logId', 'logId', { unique:false });
+            }
+          };
+          request.onsuccess = function(){ resolve(request.result); };
+          request.onerror = function(){ reject(request.error); };
+        });
+        return dbPromise;
+      }
+      async function getMediaForLog(targetLogId){
+        const db = await openDb();
+        return new Promise(function(resolve,reject){
+          const tx = db.transaction(MEDIA_STORE,'readonly');
+          const store = tx.objectStore(MEDIA_STORE);
+          let request;
+          try {
+            if (store.indexNames.contains('logId')) request = store.index('logId').getAll(targetLogId);
+            else request = store.getAll();
+          } catch(err) { request = store.getAll(); }
+          request.onsuccess = function(){
+            let results = request.result || [];
+            if (!Array.isArray(results)) results = [];
+            results = results.filter(function(item){ return item && item.logId === targetLogId && item.role === 'general'; });
+            results.sort(function(a,b){ return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime(); });
+            resolve(results);
+          };
+          request.onerror = function(){ reject(request.error); };
+        });
+      }
+      async function getMediaRecordById(mediaId){
+        const db = await openDb();
+        return new Promise(function(resolve,reject){
+          const tx = db.transaction(MEDIA_STORE,'readonly');
+          const store = tx.objectStore(MEDIA_STORE);
+          const request = store.get(mediaId);
+          request.onsuccess = function(){ resolve(request.result || null); };
+          request.onerror = function(){ reject(request.error); };
+        });
+      }
+      async function updateMediaDescription(mediaId, description){
+        const existing = await getMediaRecordById(mediaId);
+        if (!existing) throw new Error('Media not found.');
+        existing.description = description || '';
+        const db = await openDb();
+        return new Promise(function(resolve,reject){
+          const tx = db.transaction(MEDIA_STORE,'readwrite');
+          const store = tx.objectStore(MEDIA_STORE);
+          const request = store.put(existing);
+          request.onsuccess = function(){ resolve(existing); };
+          request.onerror = function(){ reject(request.error); };
+        });
+      }
+      async function deleteMediaRecordById(mediaId){
+        const db = await openDb();
+        return new Promise(function(resolve,reject){
+          const tx = db.transaction(MEDIA_STORE,'readwrite');
+          const store = tx.objectStore(MEDIA_STORE);
+          const request = store.delete(mediaId);
+          request.onsuccess = function(){ resolve(); };
+          request.onerror = function(){ reject(request.error); };
+        });
+      }
+      function openSavedMediaViewer(mediaId){
+        const params = new URLSearchParams({ mediaId: mediaId, returnUrl: window.location.href });
+        window.location.assign('./media-viewer.html?' + params.toString());
+      }
+      function updateEntryMediaCount(targetLogId, count){
+        try {
+          const entries = JSON.parse(localStorage.getItem('trailerLogs') || '[]');
+          const index = entries.findIndex(function(entry){ return entry.id === targetLogId; });
+          if (index >= 0) {
+            entries[index].mediaCount = count;
+            localStorage.setItem('trailerLogs', JSON.stringify(entries));
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
+      async function render(){
+        revokeObjectUrls();
+        if (!logId) {
+          pageTitle.textContent = 'Saved Media';
+          pageSubtitle.textContent = 'No log was selected.';
+          mediaGrid.innerHTML = '<div class="empty-state">No current log selected.</div>';
+          return;
+        }
+        if (tube) pageTitle.textContent = 'Saved Media — Tube ' + tube;
+        if (destination) pageSubtitle.textContent = destination;
+        const items = await getMediaForLog(logId);
+        updateEntryMediaCount(logId, items.length);
+        if (!items.length) {
+          mediaGrid.innerHTML = '<div class="empty-state">No saved media is attached to the log you are currently editing.</div>';
+          return;
+        }
+        mediaGrid.innerHTML = items.map(function(item){
+          const url = URL.createObjectURL(item.blob);
+          activeObjectUrls.push(url);
+          const preview = (item.type || '').toLowerCase().indexOf('video/') === 0
+            ? '<video preload="metadata" muted playsinline src="' + url + '"></video>'
+            : '<img src="' + url + '" alt="Saved media">';
+          const note = (item.description || '').trim() ? escapeHtml(item.description.trim()) : 'No note added yet.';
+          return '<div class="media-card">'
+            + '<button type="button" class="media-open-btn" data-media-id="' + escapeHtml(item.id) + '">' + preview + '</button>'
+            + '<div class="media-card-body">'
+            + '<div class="media-desc">' + note + '</div>'
+            + '<div class="media-card-actions">'
+            + '<button type="button" class="secondary edit-note-btn" data-media-id="' + escapeHtml(item.id) + '">Edit Note</button>'
+            + '<button type="button" class="danger delete-media-btn" data-media-id="' + escapeHtml(item.id) + '">Delete Media</button>'
+            + '</div></div></div>';
+        }).join('');
+      }
+      document.getElementById('backBtn').addEventListener('click', function(){
+        if (history.length > 1) history.back();
+        else window.location.assign(returnUrl || './index.html');
+      });
+      mediaGrid.addEventListener('click', async function(event){
+        const openBtn = event.target.closest('.media-open-btn');
+        if (openBtn) {
+          const mediaId = openBtn.getAttribute('data-media-id');
+          if (mediaId) openSavedMediaViewer(mediaId);
+          return;
+        }
+        const editBtn = event.target.closest('.edit-note-btn');
+        if (editBtn) {
+          const mediaId = editBtn.getAttribute('data-media-id');
+          if (!mediaId) return;
+          try {
+            const mediaItem = await getMediaRecordById(mediaId);
+            if (!mediaItem) { setStatus('That media item could not be found.','error'); return; }
+            const updated = window.prompt('Edit media note/description:', mediaItem.description || '');
+            if (updated === null) { setStatus('Media note edit canceled.','warning'); return; }
+            await updateMediaDescription(mediaId, updated.trim());
+            await render();
+            setStatus('Media note updated.','success');
+          } catch(err) {
+            console.error(err);
+            setStatus('Could not update that media note.','error');
+          }
+          return;
+        }
+        const deleteBtn = event.target.closest('.delete-media-btn');
+        if (deleteBtn) {
+          const mediaId = deleteBtn.getAttribute('data-media-id');
+          if (!mediaId) return;
+          const ok = window.confirm('Delete this attached media item from the log?');
+          if (!ok) { setStatus('Media delete canceled.','warning'); return; }
+          try {
+            await deleteMediaRecordById(mediaId);
+            await render();
+            setStatus('Media deleted from this log.','success');
+          } catch(err) {
+            console.error(err);
+            setStatus('Could not delete that media item.','error');
+          }
+        }
+      });
+      render().catch(function(err){ console.error(err); setStatus('Could not load saved media.','error'); mediaGrid.innerHTML='<div class="empty-state">Could not load saved media.</div>'; });
+      window.addEventListener('pagehide', revokeObjectUrls);
+    })();
+  </script>
+</body>
+</html>

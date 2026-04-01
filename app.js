@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const selectedMediaInfo = document.getElementById('selectedMediaInfo');
   const pendingMediaPreview = document.getElementById('pendingMediaPreview');
   const attachedMediaSection = document.getElementById('attachedMediaSection');
+  const topOpenSavedMediaBtn = document.getElementById('topOpenSavedMediaBtn');
   const topOpenConstructionSheetBtn = document.getElementById('topOpenConstructionSheetBtn');
   const topDownloadConstructionSheetBtn = document.getElementById('topDownloadConstructionSheetBtn');
   const takeConstructionSheetBtn = document.getElementById('takeConstructionSheetBtn');
@@ -133,6 +134,43 @@ document.addEventListener('DOMContentLoaded', function () {
   function formatLinerValue(value, unit) {
     if (value == null || value === '') return '—';
     return escapeHtml(value) + (unit ? ' ' + unit : '');
+  }
+
+  function normalizeTubeNumber(value) {
+    return String(value || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  }
+
+  function getTubeDuplicateKey(entry) {
+    return normalizeTubeNumber(entry && entry.tubeNumber);
+  }
+
+  function getEntriesWithSameTubeNumber(entries, entry, excludeId) {
+    const targetKey = getTubeDuplicateKey(entry);
+    if (!targetKey) return [];
+    return (entries || []).filter(function (item) {
+      return item && item.id !== excludeId && getTubeDuplicateKey(item) === targetKey;
+    });
+  }
+
+  function getMostRecentTimestamp(entry) {
+    return new Date(entry && (entry.updatedAt || entry.createdAt) || 0).getTime();
+  }
+
+  function dedupeStatusMessage(result, mode, wasEditing) {
+    const baseLabel = mode === 'draft' ? 'Draft' : 'Log';
+    if (!result) {
+      return baseLabel + (wasEditing ? ' updated.' : ' saved.');
+    }
+    if (result.mergedIntoExisting) {
+      return 'An existing log with that tube number was updated instead of creating a duplicate.';
+    }
+    if (result.removedDuplicateCount) {
+      return 'Removed ' + result.removedDuplicateCount + ' older duplicate log(s) for this tube number.';
+    }
+    return baseLabel + (wasEditing ? ' updated.' : ' saved.');
   }
 
   function setStatus(message, type) {
@@ -286,6 +324,41 @@ document.addEventListener('DOMContentLoaded', function () {
     window.location.assign('./media-viewer.html?' + params.toString());
   }
 
+
+  function openSavedMediaPage(logId) {
+    if (!logId) return;
+    const entries = getEntries();
+    const entry = entries.find(function (item) { return item.id === logId; });
+    const params = new URLSearchParams({ logId: logId, returnUrl: window.location.href });
+    if (entry && entry.tubeNumber) params.set('tube', entry.tubeNumber);
+    if (entry && entry.destination) params.set('destination', entry.destination);
+    window.location.assign('./saved-media.html?' + params.toString());
+  }
+
+  async function refreshSavedMediaLink() {
+    if (!topOpenSavedMediaBtn) return;
+    const logId = editingIdInput.value;
+    if (!logId) {
+      topOpenSavedMediaBtn.hidden = true;
+      topOpenSavedMediaBtn.textContent = "Open This Log's Media";
+      return;
+    }
+    try {
+      const generalMedia = getRegularMediaItems(await getMediaForLog(logId));
+      if (!generalMedia.length) {
+        topOpenSavedMediaBtn.hidden = true;
+        topOpenSavedMediaBtn.textContent = "Open This Log's Media";
+        return;
+      }
+      topOpenSavedMediaBtn.hidden = false;
+      topOpenSavedMediaBtn.textContent = "Open This Log's Media (" + generalMedia.length + ')';
+    } catch (err) {
+      console.error(err);
+      topOpenSavedMediaBtn.hidden = true;
+      topOpenSavedMediaBtn.textContent = "Open This Log's Media";
+    }
+  }
+
   async function openPendingMediaViewer(targetId) {
     const item = pendingMedia.find(function (media) { return media.localId === targetId; });
     if (!item) return;
@@ -429,6 +502,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
     await saveMediaRecords(records);
     return records;
+  }
+
+  async function reassignMediaToLog(oldLogIds, newLogId) {
+    const sourceIds = Array.isArray(oldLogIds) ? oldLogIds.filter(Boolean) : [];
+    if (!sourceIds.length || !newLogId) return;
+    const allMedia = await getAllMedia();
+    const recordsToMove = allMedia.filter(function (item) {
+      return item && sourceIds.indexOf(item.logId) !== -1;
+    });
+    if (!recordsToMove.length) return;
+    recordsToMove.forEach(function (item) {
+      item.logId = newLogId;
+    });
+    await saveMediaRecords(recordsToMove);
   }
 
   async function deleteMediaForLog(logId) {
@@ -760,54 +847,10 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   async function renderAttachedMediaPreview() {
+    await refreshSavedMediaLink();
     if (!attachedMediaSection) return;
-
-    const logId = editingIdInput.value;
-    if (!logId) {
-      attachedMediaSection.hidden = true;
-      attachedMediaSection.innerHTML = '';
-      return;
-    }
-
-    let mediaItems = [];
-    try {
-      mediaItems = getRegularMediaItems(await getMediaForLog(logId));
-    } catch (err) {
-      console.error(err);
-      attachedMediaSection.hidden = true;
-      attachedMediaSection.innerHTML = '';
-      return;
-    }
-
-    if (!mediaItems.length) {
-      attachedMediaSection.hidden = true;
-      attachedMediaSection.innerHTML = '';
-      return;
-    }
-
-    attachedMediaSection.hidden = false;
-    attachedMediaSection.innerHTML = mediaItems.map(function (item) {
-      const objectUrl = URL.createObjectURL(item.blob);
-      activeObjectUrls.push(objectUrl);
-      const preview = item.type && item.type.startsWith('video/')
-        ? '<video preload="metadata" muted playsinline src="' + objectUrl + '"></video>'
-        : '<img src="' + objectUrl + '" alt="Attached media">';
-      const noteHtml = (item.description || '').trim()
-        ? '<div class="media-desc">' + escapeHtml(item.description.trim()) + '</div>'
-        : '';
-      return (
-        '<div class="media-card">' +
-          '<button type="button" class="media-open-btn saved-open-media" data-media-id="' + escapeHtml(item.id) + '" aria-label="Open attached media full screen">' + preview + '</button>' +
-          '<div class="media-card-body">' +
-            noteHtml +
-            '<div class="media-card-actions">' +
-              '<button type="button" class="secondary small-btn edit-media-note" data-media-id="' + escapeHtml(item.id) + '" data-log-id="' + escapeHtml(logId) + '">Edit Note</button>' +
-              '<button type="button" class="danger small-btn delete-media-item" data-media-id="' + escapeHtml(item.id) + '" data-log-id="' + escapeHtml(logId) + '">Delete Media</button>' +
-            '</div>' +
-          '</div>' +
-        '</div>'
-      );
-    }).join('');
+    attachedMediaSection.hidden = true;
+    attachedMediaSection.innerHTML = '';
   }
 
   function resetForm() {
@@ -824,6 +867,7 @@ document.addEventListener('DOMContentLoaded', function () {
       attachedMediaSection.hidden = true;
       attachedMediaSection.innerHTML = '';
     }
+    refreshSavedMediaLink().catch(function (err) { console.error(err); });
     cancelEditBtn.hidden = true;
     saveBtn.textContent = 'Save Final Log';
     saveDraftBtn.textContent = 'Save Draft';
@@ -993,7 +1037,6 @@ document.addEventListener('DOMContentLoaded', function () {
           '<div class="entry-actions">' +
             '<button type="button" class="secondary share-entry" data-id="' + escapeHtml(entry.id) + '">Share</button>' +
             '<button type="button" class="secondary print-entry" data-id="' + escapeHtml(entry.id) + '">Print / PDF</button>' +
-            '<button type="button" class="warning duplicate-entry" data-id="' + escapeHtml(entry.id) + '">Duplicate</button>' +
             '<button type="button" class="danger delete-entry" data-id="' + escapeHtml(entry.id) + '">Delete</button>' +
           '</div>' +
         '</li>'
@@ -1027,7 +1070,7 @@ document.addEventListener('DOMContentLoaded', function () {
     clearPendingConstructionSheet();
     clearPendingConstructionSheetFile();
     clearPendingCutSheet();
-    selectedMediaInfo.textContent = 'Existing attached media will stay unless you delete it. Any new files you add now will be attached when you save, and saved media notes can be edited below.';
+    selectedMediaInfo.textContent = "Existing attached media stays with this log. Use Open This Log's Media at the top to view, edit notes, or delete saved items for the log you are currently editing. Any new files you add now will attach when you save.";
     refreshConstructionSheetUi();
     refreshCutSheetUi();
     renderAttachedMediaPreview().catch(function (err) {
@@ -1042,10 +1085,25 @@ document.addEventListener('DOMContentLoaded', function () {
   async function saveOrUpdateEntry(entry, itemsToAttach) {
     const entries = getEntries();
     const existingIndex = entries.findIndex(function (item) { return item.id === entry.id; });
+    const duplicateMatches = getEntriesWithSameTubeNumber(entries, entry, entry.id)
+      .sort(function (a, b) { return getMostRecentTimestamp(b) - getMostRecentTimestamp(a); });
+    const mergedIntoExisting = existingIndex < 0 && duplicateMatches.length > 0;
 
-    if (existingIndex >= 0) {
+    if (mergedIntoExisting) {
+      entry.id = duplicateMatches[0].id;
+      entry.createdAt = duplicateMatches[0].createdAt || entry.createdAt;
+    } else if (existingIndex >= 0) {
       entry.createdAt = entries[existingIndex].createdAt;
-      entries[existingIndex] = entry;
+    }
+
+    const duplicateIdsToMerge = duplicateMatches
+      .map(function (item) { return item.id; })
+      .filter(function (id) { return id !== entry.id; });
+
+    const finalIndex = entries.findIndex(function (item) { return item.id === entry.id; });
+    if (finalIndex >= 0) {
+      entry.createdAt = entries[finalIndex].createdAt || entry.createdAt;
+      entries[finalIndex] = entry;
     } else {
       entries.unshift(entry);
     }
@@ -1062,6 +1120,26 @@ document.addEventListener('DOMContentLoaded', function () {
       await deleteCutSheetForLog(entry.id);
     }
 
+    if (duplicateIdsToMerge.length) {
+      await reassignMediaToLog(duplicateIdsToMerge, entry.id);
+      for (const duplicateId of duplicateIdsToMerge) {
+        if (itemsToAttach.some(function (item) { return item.role === 'construction-sheet'; })) {
+          await deleteConstructionSheetForLog(duplicateId);
+        }
+        if (itemsToAttach.some(function (item) { return item.role === 'construction-sheet-file'; })) {
+          await deleteConstructionSheetFileForLog(duplicateId);
+        }
+        if (itemsToAttach.some(function (item) { return item.role === 'cut-sheet'; })) {
+          await deleteCutSheetForLog(duplicateId);
+        }
+      }
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (duplicateIdsToMerge.indexOf(entries[i].id) !== -1) {
+          entries.splice(i, 1);
+        }
+      }
+    }
+
     if (itemsToAttach.length) {
       await saveMediaForLog(entry.id, itemsToAttach);
     }
@@ -1069,13 +1147,56 @@ document.addEventListener('DOMContentLoaded', function () {
     const mediaCount = (await getMediaForLog(entry.id)).length;
     entry.mediaCount = mediaCount;
 
-    if (existingIndex >= 0) {
-      entries[existingIndex] = entry;
+    const refreshedIndex = entries.findIndex(function (item) { return item.id === entry.id; });
+    if (refreshedIndex >= 0) {
+      entries[refreshedIndex] = entry;
     } else {
-      entries[0] = entry;
+      entries.unshift(entry);
     }
 
     setEntries(entries);
+    return {
+      mergedIntoExisting: mergedIntoExisting,
+      removedDuplicateCount: duplicateIdsToMerge.length
+    };
+  }
+
+  async function dedupeEntriesByTubeNumber() {
+    const entries = getEntries();
+    if (!entries.length) return { removed: 0 };
+
+    const groups = new Map();
+    entries.forEach(function (entry) {
+      const key = getTubeDuplicateKey(entry);
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(entry);
+    });
+
+    let removed = 0;
+    let changed = false;
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      group.sort(function (a, b) { return getMostRecentTimestamp(b) - getMostRecentTimestamp(a); });
+      const keeper = group[0];
+      const duplicates = group.slice(1);
+      if (!duplicates.length) continue;
+      await reassignMediaToLog(duplicates.map(function (item) { return item.id; }), keeper.id);
+      const duplicateIds = new Set(duplicates.map(function (item) { return item.id; }));
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (duplicateIds.has(entries[i].id)) {
+          entries.splice(i, 1);
+          removed += 1;
+          changed = true;
+        }
+      }
+      keeper.mediaCount = (await getMediaForLog(keeper.id)).length;
+      const keeperIndex = entries.findIndex(function (item) { return item.id === keeper.id; });
+      if (keeperIndex >= 0) entries[keeperIndex] = keeper;
+    }
+
+    if (changed) setEntries(entries);
+    return { removed: removed };
   }
 
   async function deleteEntry(entryId) {
@@ -1160,7 +1281,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const blob = new Blob([json], { type: 'application/json' });
 
     const shareTitle = 'Trailer log ' + (entry.tubeNumber || 'export');
-    const shareText = 'Trailer Weight Logger export for tube ' + (entry.tubeNumber || '—') + (entry.destination ? ' • ' + entry.destination : '') + '. Import the attached JSON file into the app to restore this log.';
+    const shareText = 'Liner Track export for tube ' + (entry.tubeNumber || '—') + (entry.destination ? ' • ' + entry.destination : '') + '. Import the attached JSON file into the app to restore this log.';
 
     if (typeof File === 'function' && typeof navigator.share === 'function' && window.isSecureContext) {
       const file = new File([blob], filename, { type: 'application/json' });
@@ -1270,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', function () {
       '</style></head><body>' +
       '<div class="print-actions"><button onclick="window.print()">Print / Save PDF</button></div>' +
       '<div class="chip">' + escapeHtml(statusLabel) + ' log</div>' +
-      '<h1>Trailer Weight Logger Report</h1>' +
+      '<h1>Liner Track Report</h1>' +
       '<div class="muted">Generated ' + escapeHtml(new Date().toLocaleString()) + '</div>' +
       '<div class="section no-break"><div class="summary-grid">' +
       '<div><strong>Tube Number</strong><br>' + escapeHtml(entry.tubeNumber || '—') + '</div>' +
@@ -1426,8 +1547,13 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     }
 
+    const dedupeResult = await dedupeEntriesByTubeNumber();
     await loadEntries();
-    setStatus('Imported ' + sanitizedEntries.length + ' log(s).' + (importedMedia.length ? ' Attached media was restored too.' : ''), 'success');
+    let importMessage = 'Imported ' + sanitizedEntries.length + ' log(s).' + (importedMedia.length ? ' Attached media was restored too.' : '');
+    if (dedupeResult.removed) {
+      importMessage += ' Removed ' + dedupeResult.removed + ' duplicate tube number log(s).';
+    }
+    setStatus(importMessage, 'success');
   }
 
   async function saveCurrentEntry(mode) {
@@ -1445,10 +1571,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const wasEditing = Boolean(editingIdInput.value);
 
     try {
-      await saveOrUpdateEntry(entry, pendingToAttach);
+      const saveResult = await saveOrUpdateEntry(entry, pendingToAttach);
       resetForm();
       await loadEntries();
-      setStatus((mode === 'draft' ? 'Draft' : 'Log') + (wasEditing ? ' updated.' : ' saved.'), 'success');
+      setStatus(dedupeStatusMessage(saveResult, mode, wasEditing), 'success');
     } catch (err) {
       console.error(err);
       setStatus('Could not save the entry. Large videos can exceed your browser storage limit.', 'error');
@@ -1521,6 +1647,17 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
       await downloadSavedConstructionSheetFile(existingFile);
+    });
+  }
+
+
+  if (topOpenSavedMediaBtn) {
+    topOpenSavedMediaBtn.addEventListener('click', function () {
+      if (!editingIdInput.value) {
+        setStatus('Open a saved log first to view its media.', 'warning');
+        return;
+      }
+      openSavedMediaPage(editingIdInput.value);
     });
   }
 
@@ -1744,67 +1881,6 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
 
-  if (attachedMediaSection) {
-    attachedMediaSection.addEventListener('click', async function (event) {
-      const mediaOpenButton = event.target.closest('.saved-open-media');
-      if (mediaOpenButton) {
-        const mediaId = mediaOpenButton.getAttribute('data-media-id');
-        if (mediaId) openSavedMediaViewer(mediaId);
-        return;
-      }
-
-      const mediaEditButton = event.target.closest('.edit-media-note');
-      if (mediaEditButton) {
-        const mediaId = mediaEditButton.getAttribute('data-media-id');
-        const logId = mediaEditButton.getAttribute('data-log-id');
-        if (!mediaId || !logId) return;
-        try {
-          const mediaItem = await getMediaRecordById(mediaId);
-          if (!mediaItem) {
-            setStatus('That media item could not be found.', 'error');
-            return;
-          }
-          const updatedDescription = window.prompt('Edit media note/description:', mediaItem.description || '');
-          if (updatedDescription === null) {
-            setStatus('Media note edit canceled.', 'warning');
-            return;
-          }
-          await updateMediaDescription(mediaId, updatedDescription.trim());
-          await syncMediaCountForEntry(logId);
-          await renderAttachedMediaPreview();
-          await loadEntries();
-          setStatus('Media note updated.', 'success');
-        } catch (err) {
-          console.error(err);
-          setStatus('Could not update that media note.', 'error');
-        }
-        return;
-      }
-
-      const mediaDeleteButton = event.target.closest('.delete-media-item');
-      if (mediaDeleteButton) {
-        const mediaId = mediaDeleteButton.getAttribute('data-media-id');
-        const logId = mediaDeleteButton.getAttribute('data-log-id');
-        if (!mediaId || !logId) return;
-        const ok = confirm('Delete this attached media item from the log?');
-        if (!ok) {
-          setStatus('Media delete canceled.', 'warning');
-          return;
-        }
-        try {
-          await deleteMediaRecordById(mediaId);
-          await syncMediaCountForEntry(logId);
-          await renderAttachedMediaPreview();
-          await loadEntries();
-          setStatus('Media deleted from this log.', 'success');
-        } catch (err) {
-          console.error(err);
-          setStatus('Could not delete that media item.', 'error');
-        }
-      }
-    });
-  }
-
   searchInput.addEventListener('input', function () { loadEntries(); });
   sortSelect.addEventListener('change', function () { loadEntries(); });
 
@@ -1940,22 +2016,6 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
 
-    if (button.classList.contains('duplicate-entry')) {
-      const copy = Object.assign({}, entry, {
-        id: uid(),
-        status: 'draft',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        mediaCount: 0
-      });
-      delete copy.mediaCount;
-      const allEntries = getEntries();
-      allEntries.unshift(copy);
-      setEntries(allEntries);
-      await loadEntries();
-      setStatus('Log duplicated as a draft. Media is not copied with duplicates.', 'success');
-      return;
-    }
 
     if (button.classList.contains('delete-entry')) {
       const ok = confirm('Delete this log and all local attached media for it?');
@@ -2035,6 +2095,14 @@ document.addEventListener('DOMContentLoaded', function () {
     setStatus('App installed.', 'success');
   });
 
+
+
+  window.addEventListener('pageshow', function () {
+    refreshSavedMediaLink().catch(function (err) {
+      console.error(err);
+    });
+  });
+
   if (installAppBtn) {
     installAppBtn.addEventListener('click', async function () {
       if (isStandaloneMode()) {
@@ -2074,8 +2142,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
   updateInstallUi();
   renderPendingMediaPreview();
-  loadEntries().then(function () {
-    autoOpenMostRecentEntry();
+  dedupeEntriesByTubeNumber().then(function (result) {
+    return loadEntries().then(function () {
+      if (result && result.removed) {
+        setStatus('Removed ' + result.removed + ' duplicate log(s) with the same tube number.', 'success');
+      }
+      autoOpenMostRecentEntry();
+    });
   }).catch(function (err) {
     console.error(err);
   });
