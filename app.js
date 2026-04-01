@@ -969,12 +969,20 @@ document.addEventListener('DOMContentLoaded', function () {
     return true;
   }
 
-  function getFilteredAndSortedEntries() {
+  async function getFilteredAndSortedEntries() {
     const search = searchInput.value.trim().toLowerCase();
     const sort = sortSelect.value;
     let entries = getEntries().slice();
 
     if (search) {
+      const allMedia = await getAllMedia();
+      const mediaNotesByLog = {};
+      (allMedia || []).forEach(function (item) {
+        if (!item || !item.logId || !item.description) return;
+        const existing = mediaNotesByLog[item.logId] || '';
+        mediaNotesByLog[item.logId] = (existing + ' ' + String(item.description)).trim();
+      });
+
       entries = entries.filter(function (entry) {
         return [
           entry.status,
@@ -985,7 +993,8 @@ document.addEventListener('DOMContentLoaded', function () {
           entry.linerGauge,
           entry.trailerType,
           entry.trailerNumber,
-          entry.notes
+          entry.notes,
+          mediaNotesByLog[entry.id]
         ].some(function (value) {
           return String(value || '').toLowerCase().includes(search);
         });
@@ -1013,7 +1022,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const allEntries = getEntries().slice().sort(function (a, b) {
       return new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime();
     });
-    const entries = getFilteredAndSortedEntries();
+    const entries = await getFilteredAndSortedEntries();
 
     statCount.textContent = String(allEntries.length);
     statShown.textContent = String(entries.length);
